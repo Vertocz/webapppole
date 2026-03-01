@@ -36,7 +36,7 @@ export default function StaffPage() {
 
     // Charger la liste des joueurs
     const loadJoueurs = async () => {
-      let query = supabase.from("joueuses").select("id, prenom, nom, categorie");
+      let query = supabase.from("joueuses").select("id, prenom, nom, numero_tel, categorie");
       if (u.masculin && !u.feminin) query = query.eq("categorie", "Masculin");
       else if (u.feminin && !u.masculin) query = query.eq("categorie", "Féminin");
       const { data } = await query.order("prenom", { ascending: true });
