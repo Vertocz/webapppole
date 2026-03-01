@@ -87,7 +87,7 @@ export default function SuiviSportif({ userId, readOnly = false }: { userId: str
           {editingId && (
             <div className="rounded-lg px-4 py-2.5 mb-4 text-sm"
               style={{ background: "color-mix(in srgb, var(--accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)", color: "var(--text-sub)" }}>
-              ✏️ Mode modification — les changements remplaceront l'entrée existante.
+              ✏️ Mode modification — les changements remplaceront l&apos;entrée existante.
             </div>
           )}
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -153,7 +153,7 @@ export default function SuiviSportif({ userId, readOnly = false }: { userId: str
                           <span style={{ color: "#F87171" }}>💪 {a.difficulte}/10</span>
                           <span style={{ color: "#86efac" }}>😄 {a.plaisir}/10</span>
                         </div>
-                        {a.commentaire && <p className="text-xs mt-2 italic" style={{ color: "var(--text-muted)" }}>"{a.commentaire}"</p>}
+                        {a.commentaire && <p className="text-xs mt-2 italic" style={{ color: "var(--text-muted)" }}>&ldquo;{a.commentaire}&rdquo;</p>}
                       </div>
                       {!readOnly && (
                         <div className="flex gap-1.5 shrink-0">

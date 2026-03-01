@@ -91,7 +91,7 @@ export default function SuiviForme({ userId, readOnly = false }: { userId: strin
           {editingId && (
             <div className="rounded-lg px-4 py-2.5 mb-4 text-sm"
               style={{ background: "color-mix(in srgb, var(--accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)", color: "var(--text-sub)" }}>
-              ✏️ Mode modification — les changements remplaceront l'entrée existante.
+              ✏️ Mode modification — les changements remplaceront l&apos;entrée existante.
             </div>
           )}
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -154,7 +154,7 @@ export default function SuiviForme({ userId, readOnly = false }: { userId: strin
                             </div>
                           ))}
                         </div>
-                        {d.commentaire && <p className="text-xs italic mt-2" style={{ color: "var(--text-muted)" }}>"{d.commentaire}"</p>}
+                        {d.commentaire && <p className="text-xs italic mt-2" style={{ color: "var(--text-muted)" }}>&ldquo;{d.commentaire}&rdquo;</p>}
                       </div>
                       {!readOnly && (
                         <div className="flex gap-1.5 shrink-0">

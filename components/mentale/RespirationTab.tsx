@@ -103,9 +103,9 @@ export default function RespirationTab({ userId, readOnly = false }: { userId: s
     setEditingItem(item);
     setDateS(item.date);
     setCommentaire(item.commentaire ?? "");
-    const cat = (item as any).contexte as CategorieId;
+    const cat = ((item as unknown) as Record<string, string>).contexte as CategorieId;
     setCategorieActive(cat ?? "activation");
-    setExerciceChoisi((item as any).exercice ?? null);
+    setExerciceChoisi(((item as unknown) as Record<string, string>).exercice ?? null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -314,7 +314,8 @@ export default function RespirationTab({ userId, readOnly = false }: { userId: s
         ) : (
           <div className="space-y-3">
             {historique.map((h, i) => {
-              const cat = CATEGORIES.find((c) => c.id === (h as any).contexte);
+              const hExt = (h as unknown) as Record<string, string>;
+              const cat = CATEGORIES.find((c) => c.id === hExt.contexte);
               return (
                 <div key={h.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 0.05}s`, opacity: 0, animationFillMode: "forwards" }}>
                   <Card>
@@ -332,10 +333,10 @@ export default function RespirationTab({ userId, readOnly = false }: { userId: s
                               </span>
                             )}
                           </div>
-                          {(h as any).exercice && (
+                          {hExt.exercice && (
                             <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
                               <span style={{ color: "var(--text-sub)" }}>Exercice :</span>{" "}
-                              {cat?.exercices.find(e => e.id === (h as any).exercice)?.titre ?? (h as any).exercice}
+                              {cat?.exercices.find(e => e.id === hExt.exercice)?.titre ?? hExt.exercice}
                             </p>
                           )}
                           {h.commentaire && <p className="text-xs mt-1 italic" style={{ color: "var(--text-muted)" }}>"{h.commentaire}"</p>}
