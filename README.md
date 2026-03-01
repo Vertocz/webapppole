@@ -1,36 +1,115 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pôle France Para Basketball Adapté — Next.js App
 
-## Getting Started
+Réécriture complète du site Streamlit en Next.js 14 avec App Router, TypeScript et Tailwind CSS.
 
-First, run the development server:
+## Installation
+
+```bash
+npm install
+```
+
+## Configuration
+
+Copiez `.env.local.example` en `.env.local` et remplissez vos clés Supabase :
+
+```bash
+cp .env.local.example .env.local
+```
+
+Editez `.env.local` :
+```
+NEXT_PUBLIC_SUPABASE_URL=https://fxvotvtapcwzvjhfreqv.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=votre_clé_anon_ici
+```
+
+Vous trouverez la clé `anon` dans votre dashboard Supabase → Settings → API.
+
+## Lancement en développement
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Ouvrez [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Build production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## Structure du projet
 
-To learn more about Next.js, take a look at the following resources:
+```
+parabasket/
+├── app/
+│   ├── page.tsx          ← Page de connexion (login par numéro de téléphone)
+│   ├── joueuse/
+│   │   └── page.tsx      ← Espace joueuse (billets, suivi sportif, forme)
+│   └── staff/
+│       └── page.tsx      ← Espace staff (billets, consultation suivis)
+├── components/
+│   ├── Layout.tsx         ← Header + navigation par onglets
+│   ├── Billets.tsx        ← Affichage des billets de train
+│   ├── SuiviSportif.tsx   ← Formulaire + historique activités sportives
+│   ├── SuiviForme.tsx     ← Formulaire + historique suivi de forme
+│   ├── SliderField.tsx    ← Composant slider réutilisable
+│   └── Card.tsx           ← Carte réutilisable
+├── lib/
+│   └── supabase.ts        ← Client Supabase
+└── types/
+    └── index.ts           ← Types TypeScript
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Fonctionnalités implémentées
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- ✅ Authentification par numéro de téléphone (joueuse ou staff)
+- ✅ Espace joueuse : billets de train, suivi sportif, suivi de forme quotidienne
+- ✅ Espace staff : mes billets + consultation des suivis de toutes les joueuses
+- ✅ Filtrage par catégorie (masculin/féminin) selon les droits du staff
+- ✅ Suppression des entrées avec confirmation
+- ✅ Historique des 30 derniers jours
+- ✅ Interface sombre avec thème basketball
 
-## Deploy on Vercel
+## Fonctionnalités non implémentées (pour l'instant)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- 📊 Graphiques (Plotly → à implémenter avec Recharts ou Chart.js)
+- 📈 Analyses (charge, variabilité, corrélation difficulté/plaisir)
+- 🔄 Actualisation des billets depuis le storage
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Tables Supabase à créer pour la Préparation Mentale
+
+### `suivi_emotions`
+```sql
+create table suivi_emotions (
+  id uuid primary key default gen_random_uuid(),
+  joueur_id uuid not null references joueuses(id) on delete cascade,
+  date date not null,
+  emotion_nom text not null,
+  intensite integer not null check (intensite between 1 and 10),
+  declencheur text default '',
+  ressources text default '',
+  created_at timestamptz default now()
+);
+```
+
+### `suivi_respiration`
+```sql
+create table suivi_respiration (
+  id uuid primary key default gen_random_uuid(),
+  joueur_id uuid not null references joueuses(id) on delete cascade,
+  date date not null,
+  contexte text not null check (contexte in ('quotidien', 'basket')),
+  exercice text,
+  commentaire text default '',
+  created_at timestamptz default now()
+);
+```
+
+## Buckets Supabase Storage à créer
+
+- **`emotions`** — images .jpg pour chaque émotion (noms : `joie.jpg`, `confiance.jpg`, `peur.jpg`, `colere.jpg`, `tristesse.jpg`, `surprise.jpg`, `degout.jpg`, `anxiete.jpg`)
+- **`respiration-audio`** — fichiers .mp3 pour les guides vocaux (noms : `coherence-cardiaque.mp3`, `respiration-boite.mp3`, `activation.mp3`, `recuperation.mp3`, `4-7-8.mp3`)
+
+Pour activer les images dans `EmotionsTab.tsx`, décommenter le bloc `<img>` et commenter le `<span>` emoji.
