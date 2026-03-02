@@ -52,7 +52,6 @@ export default function HomePage() {
         <div className="absolute top-0 left-0 right-0 h-1" style={{ background: "linear-gradient(90deg, #1B3A8C, #E8192C, #1B3A8C)" }} />
         <div className="absolute" style={{ top: "10%", left: "-20%", width: "50vw", height: "50vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(27,58,140,0.12) 0%, transparent 70%)" }} />
         <div className="absolute" style={{ bottom: "10%", right: "-15%", width: "40vw", height: "40vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(232,25,44,0.06) 0%, transparent 70%)" }} />
-        {/* Cercle décoratif basket */}
         <div className="absolute" style={{ top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "min(80vw, 500px)", height: "min(80vw, 500px)", borderRadius: "50%", border: "1px solid rgba(27,58,140,0.08)" }} />
         <div className="absolute" style={{ top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "min(60vw, 380px)", height: "min(60vw, 380px)", borderRadius: "50%", border: "1px solid rgba(27,58,140,0.06)" }} />
       </div>
@@ -85,7 +84,6 @@ export default function HomePage() {
             border: "1px solid rgba(43,80,160,0.2)",
             boxShadow: "0 25px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(43,80,160,0.12)",
           }}>
-          {/* Bande couleur top */}
           <div className="h-0.5 rounded-full mb-6" style={{ background: "linear-gradient(90deg, #1B3A8C, #E8192C)" }} />
 
           <h2 className="font-display text-2xl mb-1" style={{ color: "#E8EEF8" }}>ACCÈS MEMBRE</h2>
@@ -136,7 +134,7 @@ export default function HomePage() {
         </div>
 
         <p className="text-center text-xs mt-6 font-light" style={{ color: "rgba(43,80,160,0.4)" }}>
-          Fédération Française de Sport Adapté
+          Application créée avec amour par votre Chargé de Vie Quotidienne. N&apos;hésitez pas à le contacter pour toute question ou suggestion !
         </p>
       </div>
     </main>
