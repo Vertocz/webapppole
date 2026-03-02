@@ -8,6 +8,7 @@ import Billets from "@/components/Billets";
 import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
+import Tournois from "@/components/Tournois";
 import type { Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
 import NotificationsPermission, { useOneSignal } from "@/components/NotificationsSetup";
@@ -17,7 +18,8 @@ const BASE_TABS = [
   { id: "sportif",  label: "Suivi sportif",      icon: "⛹️‍♀️" },
   { id: "forme",    label: "Forme quotidienne",  icon: "🧘‍♀️" },
 ];
-const TAB_MENTALE = { id: "mentale", label: "Prépa mentale", icon: "🧠" };
+const TAB_MENTALE   = { id: "mentale",   label: "Prépa mentale", icon: "🧠" };
+const TAB_TOURNOIS  = { id: "tournois",  label: "Tournois",     icon: "🏆" };
 
 export default function JoueuseePage() {
   const [user, setUser] = useState<Joueuse | null>(null);
@@ -39,7 +41,7 @@ export default function JoueuseePage() {
   );
 
   const isMasculin = user.categorie === "Masculin";
-  const tabs = isMasculin ? [...BASE_TABS, TAB_MENTALE] : BASE_TABS;
+  const tabs = isMasculin ? [...BASE_TABS, TAB_MENTALE, TAB_TOURNOIS] : BASE_TABS;
 
   return (
     <>
@@ -48,7 +50,8 @@ export default function JoueuseePage() {
         {activeTab === "billets"  && <Billets userId={user.id} />}
         {activeTab === "sportif"  && <SuiviSportif userId={user.id} />}
         {activeTab === "forme"    && <SuiviForme userId={user.id} />}
-        {activeTab === "mentale" && isMasculin && <PreparationMentale userId={user.id} />}
+        {activeTab === "mentale"  && isMasculin && <PreparationMentale userId={user.id} />}
+        {activeTab === "tournois" && isMasculin && <Tournois />}
       </Layout>
       <PwaBanner />
       <NotificationsPermission />

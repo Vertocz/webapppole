@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID!;
 const ONESIGNAL_API_KEY = process.env.ONESIGNAL_API_KEY!;
 

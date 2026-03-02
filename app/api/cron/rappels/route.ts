@@ -1,32 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://polefrance.vercel.app";
-const CRON_KEY = process.env.INTERNAL_CRON_KEY!;
-
-async function sendNotif(playerIds: string[], title: string, message: string, url: string) {
-  if (playerIds.length === 0) return;
-  await fetch(`${BASE_URL}/api/notifications/send`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-internal-key": CRON_KEY },
-    body: JSON.stringify({ title, message, playerIds, url }),
-  });
-}
+// Force dynamic — empêche Next.js d'exécuter ce module au build
+export const dynamic = "force-dynamic";
 
 function isAuthorized(req: NextRequest) {
   const auth = req.headers.get("authorization");
   return auth === `Bearer ${process.env.CRON_SECRET}`;
 }
 
+async function sendNotif(
+  baseUrl: string,
+  cronKey: string,
+  playerIds: string[],
+  title: string,
+  message: string,
+  url: string
+) {
+  if (playerIds.length === 0) return;
+  await fetch(`${baseUrl}/api/notifications/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-internal-key": cronKey },
+    body: JSON.stringify({ title, message, playerIds, url }),
+  });
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Init à l'intérieur du handler — les env vars sont dispo à runtime, pas au build
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://polefrance.vercel.app";
+  const cronKey = process.env.INTERNAL_CRON_KEY!;
 
   const now = new Date();
   const fmt = (d: Date) => d.toISOString().split("T")[0];
@@ -55,20 +65,17 @@ export async function GET(req: NextRequest) {
     if (!emotions || emotions.length === 0) rappelsEmotions.push(j.id);
   }
 
-  await sendNotif(
-    rappelsSportif,
+  await sendNotif(baseUrl, cronKey, rappelsSportif,
     "⛹️ Suivi sportif",
     "Tu n'as pas enregistré de séance depuis plus d'une semaine. C'est le moment !",
     "/player"
   );
-  await sendNotif(
-    rappelsForme,
+  await sendNotif(baseUrl, cronKey, rappelsForme,
     "🧘 Forme quotidienne",
     "Ça fait 2 semaines que tu n'as pas rempli ton suivi du jour. 2 minutes suffisent !",
     "/player"
   );
-  await sendNotif(
-    rappelsEmotions,
+  await sendNotif(baseUrl, cronKey, rappelsEmotions,
     "💭 Suivi émotions",
     "Ce mois-ci tu n'as pas encore fait ton scan émotionnel. Prends 5 minutes pour toi.",
     "/player"
