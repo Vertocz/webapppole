@@ -9,6 +9,8 @@ import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
 import type { Joueuse } from "@/types";
+import PwaBanner from "@/components/PwaBanner";
+import NotificationsPermission, { useOneSignal } from "@/components/NotificationsSetup";
 
 const BASE_TABS = [
   { id: "billets",  label: "Billets",           icon: "🎫" },
@@ -21,6 +23,7 @@ export default function JoueuseePage() {
   const [user, setUser] = useState<Joueuse | null>(null);
   const [activeTab, setActiveTab] = useState("billets");
   const router = useRouter();
+  useOneSignal(user?.id ?? null);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
@@ -47,6 +50,8 @@ export default function JoueuseePage() {
         {activeTab === "forme"    && <SuiviForme userId={user.id} />}
         {activeTab === "mentale" && isMasculin && <PreparationMentale userId={user.id} />}
       </Layout>
+      <PwaBanner />
+      <NotificationsPermission />
     </>
   );
 }

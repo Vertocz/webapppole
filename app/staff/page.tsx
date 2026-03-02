@@ -11,6 +11,8 @@ import PreparationMentale from "@/components/PreparationMentale";
 import Billets from "@/components/Billets";
 import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
+import PwaBanner from "@/components/PwaBanner";
+import NotificationsPermission, { useOneSignal } from "@/components/NotificationsSetup";
 
 const ONGLETS_JOUEUR = [
   { id: "sportif", label: "Suivi sportif",    icon: "⛹️‍♀️" },
@@ -24,8 +26,9 @@ export default function StaffPage() {
   const [selectedJoueur, setSelectedJoueur] = useState<Joueuse | null>(null);
   const [ongletActif, setOngletActif] = useState<string>("sportif");
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
-  const [view, setView] = useState<"billets" | "joueurs">("joueurs");
+  const [view, setView] = useState<"billets" | "joueurs">("billets");
   const router = useRouter();
+  useOneSignal(user?.id ?? null);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
@@ -89,8 +92,8 @@ export default function StaffPage() {
           {/* Vue principale : Mes billets ou Suivi joueurs */}
           <div className="flex rounded-xl p-1 gap-1" style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
             {[
-              { id: "joueurs", label: "Suivi joueurs", icon: "📊" },
               { id: "billets", label: "Mes billets", icon: "🎫" },
+              { id: "joueurs", label: "Suivi joueurs", icon: "📊" },
             ].map((v) => (
               <button key={v.id} onClick={() => setView(v.id as "billets" | "joueurs")}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all"
@@ -169,6 +172,8 @@ export default function StaffPage() {
           )}
         </main>
       </div>
+      <PwaBanner />
+      <NotificationsPermission />
     </>
   );
 }
