@@ -183,3 +183,13 @@ create policy "public_read_billets" on storage.objects
 
 -- Pour vérifier que les policies sont bien créées :
 -- select tablename, policyname, cmd from pg_policies where schemaname = 'public';
+
+
+-- ────────────────────────────────────────────────────────────
+-- 7. MIGRATION — colonnes respiration contextuelles
+-- ────────────────────────────────────────────────────────────
+
+alter table suivi_respiration
+  add column if not exists temps   text,
+  add column if not exists moment  text,
+  add column if not exists posture text;

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { SuiviForme as SuiviFormeType } from "@/types";
 import Card from "./Card";
+import GraphiqueForme from "./GraphiqueForme";
 import SliderField from "./SliderField";
 
 const LABELS = {
@@ -34,7 +35,7 @@ export default function SuiviForme({ userId, readOnly = false }: { userId: strin
   const [commentaire, setCommentaire] = useState("");
 
   const load = async () => {
-    const d = new Date(); d.setDate(d.getDate() - 30);
+    const d = new Date(); d.setDate(d.getDate() - 60);
     const { data: d2 } = await supabase.from("suivi_forme").select("*").eq("joueuse_id", userId)
       .gte("date", d.toISOString().split("T")[0]).order("date", { ascending: false });
     setData(d2 ?? []); setLoading(false);
@@ -123,6 +124,8 @@ export default function SuiviForme({ userId, readOnly = false }: { userId: strin
           </form>
         </Card>
       )}
+
+      <GraphiqueForme data={data} />
 
       <div>
         <h3 className="font-display text-xl mb-4" style={{ color: "var(--text-main)" }}>

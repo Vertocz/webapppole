@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Activite } from "@/types";
 import Card from "./Card";
+import GraphiqueSportif from "./GraphiqueSportif";
 import SliderField from "./SliderField";
 
 const SPORTS = [
@@ -30,7 +31,7 @@ export default function SuiviSportif({ userId, readOnly = false }: { userId: str
   const [commentaire, setCommentaire] = useState("");
 
   const load = async () => {
-    const d = new Date(); d.setDate(d.getDate() - 30);
+    const d = new Date(); d.setDate(d.getDate() - 60);
     const { data } = await supabase.from("activites").select("*").eq("joueuse_id", userId)
       .gte("date", d.toISOString().split("T")[0]).order("date", { ascending: false });
     setActivites(data ?? []); setLoading(false);
@@ -124,6 +125,8 @@ export default function SuiviSportif({ userId, readOnly = false }: { userId: str
           </form>
         </Card>
       )}
+
+      <GraphiqueSportif activites={activites} />
 
       <div>
         <h3 className="font-display text-xl mb-4" style={{ color: "var(--text-main)" }}>
