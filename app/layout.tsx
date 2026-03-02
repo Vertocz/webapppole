@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
-      { url: "/icon-192.png",   sizes: "192x192", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
     ],
     apple: [
       { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
@@ -33,8 +33,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr">
       <head>
+        {/* Manifest — injecté explicitement pour garantir la détection PWA */}
+        <link rel="manifest" href="/manifest.json" />
+        {/* iOS */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="ParaBasket" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body>
@@ -43,7 +47,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
               navigator.serviceWorker.register('/sw.js')
-                .catch(function(err) { console.warn('SW:', err); });
+                .then(function(reg) { console.log('SW ok:', reg.scope); })
+                .catch(function(err) { console.warn('SW failed:', err); });
             });
           }
         ` }} />
