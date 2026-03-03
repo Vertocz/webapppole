@@ -31,7 +31,7 @@ export default function Layout({ children, userName, tabs, activeTab, onTabChang
       >
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <div
               className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center shrink-0"
               style={{ background: "white", padding: "3px" }}
@@ -52,7 +52,7 @@ export default function Layout({ children, userName, tabs, activeTab, onTabChang
           </div>
 
           {/* Right */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <div className="text-right hidden sm:block">
               <p className="text-xs uppercase tracking-widest font-light" style={{ color: "var(--text-sub)" }}>
                 {theme === "staff" ? "Staff" : "Joueur"}
@@ -80,7 +80,7 @@ export default function Layout({ children, userName, tabs, activeTab, onTabChang
         className="px-4"
         style={{ borderBottom: "1px solid var(--border)" }}
       >
-        <div className="max-w-2xl mx-auto flex gap-0 overflow-x-auto">
+        <div className="max-w-2xl mx-auto flex gap-0 overflow-x-auto scrollbar-hide">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (

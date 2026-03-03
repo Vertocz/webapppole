@@ -10,10 +10,11 @@ import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
 import Tournois from "@/components/Tournois";
 import type { Joueuse } from "@/types";
+import { supabase } from "@/lib/supabase";
 import PwaBanner from "@/components/PwaBanner";
 import NotificationsPermission, { useOneSignal } from "@/components/NotificationsSetup";
 
-const BASE_TABS = [
+const ALL_BASE_TABS = [
   { id: "billets",  label: "Billets",           icon: "🎫" },
   { id: "sportif",  label: "Suivi sportif",      icon: "⛹️‍♀️" },
   { id: "forme",    label: "Forme quotidienne",  icon: "🧘‍♀️" },
@@ -23,7 +24,8 @@ const TAB_TOURNOIS  = { id: "tournois",  label: "Tournois",     icon: "🏆" };
 
 export default function JoueuseePage() {
   const [user, setUser] = useState<Joueuse | null>(null);
-  const [activeTab, setActiveTab] = useState("billets");
+  const [activeTab, setActiveTab] = useState("sportif");
+  const [hasBillets, setHasBillets] = useState(false);
   const router = useRouter();
   useOneSignal(user?.id ?? null);
 
@@ -31,7 +33,11 @@ export default function JoueuseePage() {
     const stored = sessionStorage.getItem("user");
     const type = sessionStorage.getItem("type_user");
     if (!stored || type !== "joueuse") { router.push("/"); return; }
-    setUser(JSON.parse(stored));
+    const parsed = JSON.parse(stored);
+    setUser(parsed);
+    // Vérifier si des billets existent pour cet utilisateur
+    supabase.from("billets").select("id").eq("joueuse_id", parsed.id).limit(1)
+      .then(({ data }) => setHasBillets((data ?? []).length > 0));
   }, [router]);
 
   if (!user) return (
@@ -41,7 +47,8 @@ export default function JoueuseePage() {
   );
 
   const isMasculin = user.categorie === "Masculin";
-  const tabs = isMasculin ? [...BASE_TABS, TAB_MENTALE, TAB_TOURNOIS] : BASE_TABS;
+  const BASE_TABS = ALL_BASE_TABS.filter(t => t.id !== "billets" || hasBillets);
+  const tabs = isMasculin ? [...BASE_TABS, TAB_MENTALE, TAB_TOURNOIS] : [...BASE_TABS, TAB_TOURNOIS];
 
   return (
     <>
@@ -51,7 +58,7 @@ export default function JoueuseePage() {
         {activeTab === "sportif"  && <SuiviSportif userId={user.id} />}
         {activeTab === "forme"    && <SuiviForme userId={user.id} />}
         {activeTab === "mentale"  && isMasculin && <PreparationMentale userId={user.id} />}
-        {activeTab === "tournois" && isMasculin && <Tournois />}
+        {activeTab === "tournois" && <Tournois />}
       </Layout>
       <PwaBanner />
       <NotificationsPermission />

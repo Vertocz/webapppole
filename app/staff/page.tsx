@@ -9,6 +9,7 @@ import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
 import Billets from "@/components/Billets";
+import Tournois from "@/components/Tournois";
 import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
@@ -26,7 +27,8 @@ export default function StaffPage() {
   const [selectedJoueur, setSelectedJoueur] = useState<Joueuse | null>(null);
   const [ongletActif, setOngletActif] = useState<string>("sportif");
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
-  const [view, setView] = useState<"billets" | "joueurs">("billets");
+  const [view, setView] = useState<"billets" | "joueurs" | "tournois">("joueurs");
+  const [hasBillets, setHasBillets] = useState(false);
   const router = useRouter();
   useOneSignal(user?.id ?? null);
 
@@ -36,6 +38,13 @@ export default function StaffPage() {
     if (!stored || type !== "staff") { router.push("/"); return; }
     const u = JSON.parse(stored) as Staff;
     setUser(u);
+    // Vérifier billets staff
+    supabase.from("billets").select("id").eq("joueuse_id", u.id).limit(1)
+      .then(({ data }) => {
+        const has = (data ?? []).length > 0;
+        setHasBillets(has);
+        if (has) setView("billets");
+      });
 
     // Charger la liste des joueurs
     const loadJoueurs = async () => {
@@ -92,10 +101,11 @@ export default function StaffPage() {
           {/* Vue principale : Mes billets ou Suivi joueurs */}
           <div className="flex rounded-xl p-1 gap-1" style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
             {[
-              { id: "billets", label: "Mes billets", icon: "🎫" },
+              ...(hasBillets ? [{ id: "billets", label: "Mes billets", icon: "🎫" }] : []),
               { id: "joueurs", label: "Suivi joueurs", icon: "📊" },
+              { id: "tournois", label: "Tournois", icon: "🏆" },
             ].map((v) => (
-              <button key={v.id} onClick={() => setView(v.id as "billets" | "joueurs")}
+              <button key={v.id} onClick={() => setView(v.id as "billets" | "joueurs" | "tournois")}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all"
                 style={view === v.id
                   ? { background: "linear-gradient(135deg, var(--accent), var(--accent2))", color: "white", boxShadow: "0 2px 12px var(--accent-glow)" }
@@ -107,6 +117,7 @@ export default function StaffPage() {
 
           {/* Mes billets */}
           {view === "billets" && <Billets userId={user.id} />}
+          {view === "tournois" && <Tournois />}
 
           {/* Suivi joueurs */}
           {view === "joueurs" && (

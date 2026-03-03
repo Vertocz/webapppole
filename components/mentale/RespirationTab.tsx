@@ -139,7 +139,9 @@ export default function RespirationTab({ userId, readOnly = false }: { userId: s
   const [categorieActive, setCategorieActive] = useState<CategorieId>("activation");
   const [dateS, setDateS] = useState(new Date().toISOString().split("T")[0]);
   const [commentaire, setCommentaire] = useState("");
-  const [exerciceChoisi, setExerciceChoisi] = useState<string | null>(null);
+  const [exerciceChoisi, setExerciceChoisi] = useState<string | null>(
+    CATEGORIES.find(c => c.id === "activation")?.exercices[0]?.id ?? null
+  );
   const [tempsChoisi, setTempsChoisi] = useState("");
   const [momentChoisi, setMomentChoisi] = useState("");
   const [postureChoisie, setPostureChoisie] = useState("");
@@ -164,7 +166,11 @@ export default function RespirationTab({ userId, readOnly = false }: { userId: s
     setDateS(new Date().toISOString().split("T")[0]);
   };
 
-  const resetCriteres = () => { setTempsChoisi(""); setMomentChoisi(""); setPostureChoisie(""); setExerciceChoisi(null); };
+  const resetCriteres = (catId?: string) => {
+    setTempsChoisi(""); setMomentChoisi(""); setPostureChoisie("");
+    const cat = CATEGORIES.find(c => c.id === (catId ?? categorieActive));
+    setExerciceChoisi(cat?.exercices[0]?.id ?? null);
+  };
 
   const startEdit = (item: RespiExt) => {
     setEditingItem(item);
@@ -230,7 +236,7 @@ export default function RespirationTab({ userId, readOnly = false }: { userId: s
           const isActive = categorieActive === cat.id;
           return (
             <button key={cat.id} type="button"
-              onClick={() => { setCategorieActive(cat.id as CategorieId); if (!editingItem) resetCriteres(); }}
+              onClick={() => { setCategorieActive(cat.id as CategorieId); if (!editingItem) resetCriteres(cat.id); }}
               className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all duration-200"
               style={{
                 background: isActive ? `color-mix(in srgb, ${cat.couleur} 12%, var(--bg-card))` : "var(--bg-input)",

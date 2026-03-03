@@ -2,29 +2,6 @@
 
 const FIBA_URL = "https://play.fiba3x3.com/events?lang=fr-FR";
 
-const CONSEILS = [
-  {
-    icone: "📍",
-    titre: "Par lieu",
-    texte: "Filtre par pays ou ville pour trouver les tournois proches de chez toi ou sur ton parcours.",
-  },
-  {
-    icone: "📅",
-    titre: "Par date",
-    texte: "Consulte le calendrier et anticipe les compétitions plusieurs mois à l'avance.",
-  },
-  {
-    icone: "🏅",
-    titre: "Par niveau",
-    texte: "Les tournois sont classés par catégorie — repère ceux qui correspondent à ton niveau FIBA 3x3.",
-  },
-  {
-    icone: "⭐",
-    titre: "Points ranking",
-    texte: "Chaque tournoi indique les points ranking à gagner.",
-  },
-];
-
 export default function Tournois() {
   return (
     <div className="space-y-5">
@@ -54,7 +31,7 @@ export default function Tournois() {
           </div>
 
           <h2 className="font-display text-3xl leading-tight mb-2" style={{ color: "#E8EEF8" }}>
-            TROUVE TON<br />PROCHAIN TOURNOI
+            TROUVE TON PROCHAIN TOURNOI
           </h2>
           <p className="text-sm leading-relaxed mb-6" style={{ color: "#6B82B0" }}>
             Accède au calendrier officiel FIBA 3x3 et repère les tournois disponibles autour de toi.
@@ -79,25 +56,6 @@ export default function Tournois() {
         </div>
       </div>
 
-      {/* Conseils d'utilisation */}
-      <div>
-        <p className="text-xs font-medium tracking-widest uppercase mb-3" style={{ color: "var(--text-sub)" }}>
-          Comment utiliser la plateforme
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          {CONSEILS.map((c) => (
-            <div key={c.titre} className="rounded-xl p-4"
-              style={{
-                background: "#0B1120",
-                border: "1px solid rgba(43,80,160,0.12)",
-              }}>
-              <span className="text-xl mb-2 block">{c.icone}</span>
-              <p className="text-xs font-bold mb-1" style={{ color: "var(--text-main)" }}>{c.titre}</p>
-              <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>{c.texte}</p>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

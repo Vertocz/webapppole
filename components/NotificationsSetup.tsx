@@ -2,16 +2,13 @@
 
 import { useEffect, useState } from "react";
 
-// Initialise OneSignal et enregistre le joueur
+// ─── Hook OneSignal ───────────────────────────────────────────────────────────
 export function useOneSignal(userId: string | null) {
   useEffect(() => {
-    if (!userId) return;
-    if (typeof window === "undefined") return;
-
+    if (!userId || typeof window === "undefined") return;
     const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
     if (!appId) return;
 
-    // Charger le SDK OneSignal
     const script = document.createElement("script");
     script.src = "https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js";
     script.defer = true;
@@ -19,97 +16,102 @@ export function useOneSignal(userId: string | null) {
 
     script.onload = () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const OneSignal = (window as any).OneSignalDeferred = (window as any).OneSignalDeferred || [];
-      OneSignal.push(async () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const OS = (window as any).OneSignal;
+      const OneSignalDeferred: any[] = (window as any).OneSignalDeferred = (window as any).OneSignalDeferred || [];
+      OneSignalDeferred.push(async (OS: any) => {
         await OS.init({
           appId,
-          safari_web_id: process.env.NEXT_PUBLIC_ONESIGNAL_SAFARI_ID ?? "",
-          notifyButton: { enable: false }, // on gère nous-mêmes l'UI
+          notifyButton: { enable: false },
           allowLocalhostAsSecureOrigin: true,
+          serviceWorkerParam: { scope: "/" },
+          serviceWorkerPath: "/OneSignalSDKWorker.js",
         });
-        // Associer l'ID joueur pour ciblage individuel
         await OS.login(userId);
       });
     };
 
-    return () => {
-      if (document.head.contains(script)) document.head.removeChild(script);
-    };
+    return () => { if (document.head.contains(script)) document.head.removeChild(script); };
   }, [userId]);
 }
 
-// Bouton demande de permission (affiché après connexion)
+// ─── Détection PWA ────────────────────────────────────────────────────────────
+function isPWA(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.matchMedia("(display-mode: standalone)").matches) return true;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((navigator as any).standalone === true) return true;
+  return false;
+}
+
+// ─── Popup notification ───────────────────────────────────────────────────────
 export default function NotificationsPermission() {
-  const [status, setStatus] = useState<"idle" | "granted" | "denied" | "loading">("idle");
   const [visible, setVisible] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  const [result, setResult] = useState<"granted" | "denied" | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("Notification" in window)) return;
 
-    const already = localStorage.getItem("notif-permission-asked");
-    if (already) return;
+    // Afficher si : permission pas encore accordée ET (PWA installée OU permission jamais demandée)
+    const notGranted = Notification.permission !== "granted";
+    const notDenied = Notification.permission !== "denied";
 
-    // Petit délai pour ne pas surcharger l'écran à la connexion
-    const timer = setTimeout(() => {
-      if (Notification.permission === "default") setVisible(true);
-      else if (Notification.permission === "granted") {
-        localStorage.setItem("notif-permission-asked", "1");
+    if (notGranted && notDenied) {
+      // Sur PWA : toujours proposer à chaque session
+      // Sur navigateur : seulement si jamais demandé
+      const alreadyAsked = localStorage.getItem("notif-asked");
+      if (isPWA() || !alreadyAsked) {
+        const timer = setTimeout(() => setVisible(true), 2500);
+        return () => clearTimeout(timer);
       }
-    }, 2500);
-    return () => clearTimeout(timer);
+    }
   }, []);
 
-  const requestPermission = async () => {
-    setStatus("loading");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const OS = (window as any).OneSignal;
-    if (OS) {
-      try {
+  const handleAccept = async () => {
+    setRequesting(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const OS = (window as any).OneSignal;
+      if (OS?.Notifications) {
         await OS.Notifications.requestPermission();
         const granted = OS.Notifications.permission;
-        setStatus(granted ? "granted" : "denied");
-      } catch {
-        setStatus("denied");
+        setResult(granted ? "granted" : "denied");
+      } else {
+        const r = await Notification.requestPermission();
+        setResult(r === "granted" ? "granted" : "denied");
       }
-    } else {
-      // Fallback natif si OneSignal pas encore chargé
-      const result = await Notification.requestPermission();
-      setStatus(result === "granted" ? "granted" : "denied");
+    } catch {
+      setResult("denied");
+    } finally {
+      setRequesting(false);
+      localStorage.setItem("notif-asked", "1");
+      setTimeout(() => setVisible(false), 2500);
     }
-    localStorage.setItem("notif-permission-asked", "1");
-    setTimeout(() => setVisible(false), 2000);
   };
 
-  const dismiss = () => {
-    localStorage.setItem("notif-permission-asked", "1");
+  const handleDismiss = () => {
+    if (!isPWA()) localStorage.setItem("notif-asked", "1");
+    // Sur PWA on ne sauvegarde pas → réapparaîtra à la prochaine session
     setVisible(false);
   };
 
   if (!visible) return null;
 
   return (
-    <div className="fixed top-4 left-4 right-4 z-50 animate-slide-in"
-      style={{ maxWidth: "420px", margin: "0 auto" }}>
+    <div className="fixed top-4 left-4 right-4 z-50 animate-slide-in" style={{ maxWidth: "420px", margin: "0 auto" }}>
       <div className="rounded-2xl p-4 shadow-2xl"
-        style={{
-          background: "linear-gradient(145deg, #0E1628, #111E35)",
-          border: "1px solid rgba(43,80,160,0.35)",
-          boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
-        }}>
+        style={{ background: "linear-gradient(145deg, #0E1628, #111E35)", border: "1px solid rgba(43,80,160,0.35)", boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}>
         <div className="h-0.5 rounded-full mb-4" style={{ background: "linear-gradient(90deg, #1B3A8C, #E8192C)" }} />
 
-        {status === "granted" ? (
+        {result === "granted" ? (
           <div className="text-center py-2">
             <p className="text-2xl mb-1">✅</p>
             <p className="text-sm font-medium" style={{ color: "#86efac" }}>Notifications activées !</p>
           </div>
-        ) : status === "denied" ? (
+        ) : result === "denied" ? (
           <div className="text-center py-2">
             <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-              Tu pourras les activer plus tard dans les paramètres de ton navigateur.
+              Active-les depuis les paramètres de ton navigateur si tu changes d&apos;avis.
             </p>
           </div>
         ) : (
@@ -121,17 +123,17 @@ export default function NotificationsPermission() {
                   ACTIVER LES NOTIFICATIONS
                 </p>
                 <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                  Reçois des rappels pour tes suivis et sois alerté quand tes billets de train sont disponibles.
+                  Reçois les rappels de suivi et sois alerté quand tes billets sont disponibles.
                 </p>
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={requestPermission} disabled={status === "loading"}
+              <button onClick={handleAccept} disabled={requesting}
                 className="flex-1 py-2.5 rounded-xl text-xs font-display tracking-widest transition-all"
-                style={{ background: "linear-gradient(135deg, #1B3A8C, #2952CC)", color: "white", boxShadow: "0 4px 16px rgba(27,58,140,0.4)" }}>
-                {status === "loading" ? "..." : "ACTIVER"}
+                style={{ background: "linear-gradient(135deg, #1B3A8C, #2952CC)", color: "white", boxShadow: "0 4px 16px rgba(27,58,140,0.4)", opacity: requesting ? 0.6 : 1 }}>
+                {requesting ? "..." : "ACTIVER"}
               </button>
-              <button onClick={dismiss}
+              <button onClick={handleDismiss}
                 className="px-4 py-2.5 rounded-xl text-xs font-medium"
                 style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}>
                 Plus tard
