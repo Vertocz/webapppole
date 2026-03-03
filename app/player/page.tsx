@@ -9,10 +9,13 @@ import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
 import Tournois from "@/components/Tournois";
+import BadgesTab from "@/components/BadgesTab";
+import BadgePopup from "@/components/BadgePopup";
 import type { Joueuse } from "@/types";
 import { supabase } from "@/lib/supabase";
 import PwaBanner from "@/components/PwaBanner";
 import NotificationsPermission, { useOneSignal } from "@/components/NotificationsSetup";
+import { useBadges } from "@/lib/useBadges";
 
 const ALL_BASE_TABS = [
   { id: "billets",  label: "Billets",           icon: "🎫" },
@@ -21,24 +24,43 @@ const ALL_BASE_TABS = [
 ];
 const TAB_MENTALE   = { id: "mentale",   label: "Prépa mentale", icon: "🧠" };
 const TAB_TOURNOIS  = { id: "tournois",  label: "Tournois",     icon: "🏆" };
+const TAB_BADGES    = { id: "badges",    label: "Badges",       icon: "🏅" };
 
 export default function JoueuseePage() {
-  const [user, setUser] = useState<Joueuse | null>(null);
+  const [user, setUser]           = useState<Joueuse | null>(null);
   const [activeTab, setActiveTab] = useState("sportif");
   const [hasBillets, setHasBillets] = useState(false);
+  const [hasBadges, setHasBadges] = useState(false);
+  const [newBadgeIds, setNewBadgeIds] = useState<string[]>([]);
   const router = useRouter();
-  useOneSignal(user?.id ?? null);
+  const { checkAndAward } = useBadges();
+
+  useOneSignal(user?.id ?? null, user ? {
+    type: user.categorie === "Masculin" ? "joueur_masculin" : "joueur_feminin",
+    prenom: user.prenom,
+  } : undefined);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
     const type = sessionStorage.getItem("type_user");
     if (!stored || type !== "joueuse") { router.push("/"); return; }
-    const parsed = JSON.parse(stored);
+    const parsed = JSON.parse(stored) as Joueuse;
     setUser(parsed);
-    // Vérifier si des billets existent pour cet utilisateur
+
+    // Billets
     supabase.from("billets").select("id").eq("joueuse_id", parsed.id).limit(1)
       .then(({ data }) => setHasBillets((data ?? []).length > 0));
-  }, [router]);
+
+    // Badges déjà acquis ?
+    supabase.from("badges_joueur").select("id").eq("joueur_id", parsed.id).eq("joueur_type", "joueur").limit(1)
+      .then(({ data }) => setHasBadges((data ?? []).length > 0));
+
+    // Vérifier et attribuer les badges
+    checkAndAward(parsed.id, "joueur", (ids) => {
+      setNewBadgeIds(ids);
+      setHasBadges(true);
+    });
+  }, [router, checkAndAward]);
 
   if (!user) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)" }}>
@@ -48,7 +70,12 @@ export default function JoueuseePage() {
 
   const isMasculin = user.categorie === "Masculin";
   const BASE_TABS = ALL_BASE_TABS.filter(t => t.id !== "billets" || hasBillets);
-  const tabs = isMasculin ? [...BASE_TABS, TAB_MENTALE, TAB_TOURNOIS] : [...BASE_TABS, TAB_TOURNOIS];
+  const tabs = [
+    ...BASE_TABS,
+    ...(isMasculin ? [TAB_MENTALE] : []),
+    TAB_TOURNOIS,
+    ...(hasBadges ? [TAB_BADGES] : []),
+  ];
 
   return (
     <>
@@ -59,9 +86,13 @@ export default function JoueuseePage() {
         {activeTab === "forme"    && <SuiviForme userId={user.id} />}
         {activeTab === "mentale"  && isMasculin && <PreparationMentale userId={user.id} />}
         {activeTab === "tournois" && <Tournois />}
+        {activeTab === "badges"   && <BadgesTab userId={user.id} userType="joueur" />}
       </Layout>
       <PwaBanner />
       <NotificationsPermission />
+      {newBadgeIds.length > 0 && (
+        <BadgePopup badgeIds={newBadgeIds} onDone={() => setNewBadgeIds([])} />
+      )}
     </>
   );
 }

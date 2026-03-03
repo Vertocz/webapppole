@@ -10,6 +10,9 @@ import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
 import Billets from "@/components/Billets";
 import Tournois from "@/components/Tournois";
+import BadgesTab from "@/components/BadgesTab";
+import BadgePopup from "@/components/BadgePopup";
+import { useBadges } from "@/lib/useBadges";
 import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
@@ -27,8 +30,11 @@ export default function StaffPage() {
   const [selectedJoueur, setSelectedJoueur] = useState<Joueuse | null>(null);
   const [ongletActif, setOngletActif] = useState<string>("sportif");
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
-  const [view, setView] = useState<"billets" | "joueurs" | "tournois">("joueurs");
+  const { checkAndAward } = useBadges();
+  const [view, setView] = useState<"billets" | "joueurs" | "tournois" | "badges">("joueurs");
   const [hasBillets, setHasBillets] = useState(false);
+  const [hasBadges, setHasBadges] = useState(false);
+  const [newBadgeIds, setNewBadgeIds] = useState<string[]>([]);
   const router = useRouter();
   useOneSignal(user?.id ?? null, user ? {
     type: user.masculin && user.feminin ? "staff_les_deux"
@@ -43,6 +49,11 @@ export default function StaffPage() {
     if (!stored || type !== "staff") { router.push("/"); return; }
     const u = JSON.parse(stored) as Staff;
     setUser(u);
+    // Badges
+    supabase.from("badges_joueur").select("id").eq("joueur_id", u.id).eq("joueur_type", "staff").limit(1)
+      .then(({ data }) => setHasBadges((data ?? []).length > 0));
+    checkAndAward(u.id, "staff", (ids) => { setNewBadgeIds(ids); setHasBadges(true); });
+
     // Vérifier billets staff
     supabase.from("billets").select("id").eq("joueuse_id", u.id).limit(1)
       .then(({ data }) => {
@@ -109,8 +120,9 @@ export default function StaffPage() {
               ...(hasBillets ? [{ id: "billets", label: "Mes billets", icon: "🎫" }] : []),
               { id: "joueurs", label: "Suivi joueurs", icon: "📊" },
               { id: "tournois", label: "Tournois", icon: "🏆" },
+              ...(hasBadges ? [{ id: "badges", label: "Badges", icon: "🏅" }] : []),
             ].map((v) => (
-              <button key={v.id} onClick={() => setView(v.id as "billets" | "joueurs" | "tournois")}
+              <button key={v.id} onClick={() => setView(v.id as "billets" | "joueurs" | "tournois" | "badges")}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all"
                 style={view === v.id
                   ? { background: "linear-gradient(135deg, var(--accent), var(--accent2))", color: "white", boxShadow: "0 2px 12px var(--accent-glow)" }
@@ -123,6 +135,7 @@ export default function StaffPage() {
           {/* Mes billets */}
           {view === "billets" && <Billets userId={user.id} />}
           {view === "tournois" && <Tournois />}
+          {view === "badges" && user && <BadgesTab userId={user.id} userType="staff" />}
 
           {/* Suivi joueurs */}
           {view === "joueurs" && (
@@ -190,6 +203,9 @@ export default function StaffPage() {
       </div>
       <PwaBanner />
       <NotificationsPermission />
+      {newBadgeIds.length > 0 && (
+        <BadgePopup badgeIds={newBadgeIds} onDone={() => setNewBadgeIds([])} />
+      )}
     </>
   );
 }
