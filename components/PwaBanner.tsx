@@ -80,7 +80,7 @@ export default function PwaBanner() {
           <div className="rounded-xl p-3 space-y-1.5"
             style={{ background: "rgba(27,58,140,0.1)", border: "1px solid rgba(27,58,140,0.2)" }}>
             <Step num={1} text="Appuie sur le menu" icon="⋮" />
-            <Step num={2} text='Sélectionne "Installer l&apos;application"' icon="➕" />
+            <Step num={2} text='Sélectionne "Ajouter à la page d&apos;accueil"' icon="➕" />
           </div>
         )}
 

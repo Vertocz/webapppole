@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ParaBasket Pôle",
+  title: "Pôle France Para Basketball Adapté",
   description: "Suivi sportif et préparation mentale — Pôle France Para Basketball Adapté",
   manifest: "/manifest.json",
   appleWebApp: {
