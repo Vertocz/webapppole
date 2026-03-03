@@ -30,7 +30,12 @@ export default function StaffPage() {
   const [view, setView] = useState<"billets" | "joueurs" | "tournois">("joueurs");
   const [hasBillets, setHasBillets] = useState(false);
   const router = useRouter();
-  useOneSignal(user?.id ?? null);
+  useOneSignal(user?.id ?? null, user ? {
+    type: user.masculin && user.feminin ? "staff_les_deux"
+      : user.masculin ? "staff_masculin"
+      : "staff_feminin",
+    prenom: user.prenom,
+  } : undefined);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");

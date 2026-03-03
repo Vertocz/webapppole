@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 
 // ─── Hook OneSignal ───────────────────────────────────────────────────────────
-export function useOneSignal(userId: string | null) {
+interface OneSignalTags {
+  type: "joueur_masculin" | "joueur_feminin" | "staff_masculin" | "staff_feminin" | "staff_les_deux";
+  prenom: string;
+}
+
+export function useOneSignal(userId: string | null, tags?: OneSignalTags) {
   useEffect(() => {
     if (!userId || typeof window === "undefined") return;
     const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
@@ -26,11 +31,18 @@ export function useOneSignal(userId: string | null) {
           serviceWorkerPath: "/OneSignalSDKWorker.js",
         });
         await OS.login(userId);
+        // Tags pour le ciblage par segment
+        if (tags) {
+          await OS.User.addTags({
+            type: tags.type,
+            prenom: tags.prenom,
+          });
+        }
       });
     };
 
     return () => { if (document.head.contains(script)) document.head.removeChild(script); };
-  }, [userId]);
+  }, [userId, tags]);
 }
 
 // ─── Détection PWA ────────────────────────────────────────────────────────────
