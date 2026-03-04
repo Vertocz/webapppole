@@ -128,7 +128,7 @@ function IconBtn({ onClick, icon, danger = false, title }: { onClick: () => void
 }
 
 // ─── Composant principal ──────────────────────────────────────────────────────
-export default function RespirationTab({ userId, readOnly = false }: { userId: string; readOnly?: boolean }) {
+export default function RespirationTab({ userId, readOnly = false, onSave }: { userId: string; readOnly?: boolean; onSave?: () => void }) {
   const [historique, setHistorique] = useState<RespiExt[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
