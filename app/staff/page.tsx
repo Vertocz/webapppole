@@ -179,7 +179,7 @@ export default function StaffPage() {
               {selectedJoueur && (
                 <div className="animate-fade-in-up" key={selectedJoueur.id}>
                   {/* Sous-navigation */}
-                  <div className="flex border-b mb-5" style={{ borderColor: "var(--border)" }}>
+                  <div className="flex overflow-x-auto scrollbar-hide border-b mb-5" style={{ borderColor: "var(--border)" }}>
                     {ONGLETS_JOUEUR.map((ong) => (
                       <button key={ong.id} onClick={() => setOngletActif(ong.id)}
                         className="flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap transition-all"
