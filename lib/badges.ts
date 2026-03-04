@@ -1,182 +1,186 @@
 // ─── Définition des badges ────────────────────────────────────────────────────
-// Pour remplacer l'emoji par une image PNG plus tard :
-// Ajouter un champ `image?: string` et utiliser <img src={`/badges/${badge.image}`} />
+// Pour remplacer l'emoji par une image PNG :
+// Ajouter image?: string et utiliser <img src={`/badges/${badge.image}`} />
 
-export type BadgeNiveau = "bronze" | "argent" | "or" | "ultime";
-export type BadgeCategorie = "basket" | "renforcement" | "connexion" | "suivi_complet" | "mental";
+export type BadgeCategorie =
+  | "basket" | "renforcement" | "connexion"
+  | "forme" | "mental" | "complet";
 
 export interface BadgeDef {
   id: string;
   categorie: BadgeCategorie;
-  niveau: BadgeNiveau;
   nom: string;
   description: string;
-  emoji: string; // Remplacer par image PNG plus tard
-  // image?: string; // ex: "basket_bronze.png"
-  // Cible : "joueur" | "staff" | "tous"
-  cible: "joueur" | "staff" | "tous";
+  emoji: string;
+  // "joueur_tous" = tous les joueurs, "joueur_masculin" = masculin seulement, "staff" = staff
+  cible: "joueur_tous" | "joueur_masculin" | "staff";
 }
 
 export const BADGES: BadgeDef[] = [
   // ── Basket ────────────────────────────────────────────────────────────────
   {
-    id: "basket_bronze",    categorie: "basket",    niveau: "bronze",
-    nom: "Premier dribble", description: "3 séances de basket dans la même semaine",
-    emoji: "🥉", cible: "joueur",
-  },
-  {
-    id: "basket_argent",    categorie: "basket",    niveau: "argent",
-    nom: "En rythme",       description: "3+ séances de basket pendant 2 semaines de suite",
-    emoji: "🥈", cible: "joueur",
-  },
-  {
-    id: "basket_or",        categorie: "basket",    niveau: "or",
-    nom: "Régularité d'élite", description: "3+ séances de basket pendant 4 semaines de suite",
-    emoji: "🥇", cible: "joueur",
-  },
-  {
-    id: "basket_ultime",    categorie: "basket",    niveau: "ultime",
-    nom: "Machine à basket", description: "3+ séances de basket pendant 8 semaines de suite",
-    emoji: "💎", cible: "joueur",
+    id: "basket_engage",
+    categorie: "basket",
+    nom: "Basketteur engagé",
+    description: "10 séances de basket enregistrées",
+    emoji: "🏀",
+    cible: "joueur_tous",
   },
 
   // ── Renforcement ──────────────────────────────────────────────────────────
   {
-    id: "renfo_bronze",     categorie: "renforcement", niveau: "bronze",
-    nom: "Premiers muscles", description: "3 séances de renforcement dans la même semaine",
-    emoji: "🥉", cible: "joueur",
-  },
-  {
-    id: "renfo_argent",     categorie: "renforcement", niveau: "argent",
-    nom: "Corps en construction", description: "3+ séances de renforcement pendant 2 semaines de suite",
-    emoji: "🥈", cible: "joueur",
-  },
-  {
-    id: "renfo_or",         categorie: "renforcement", niveau: "or",
-    nom: "Athlète complet", description: "3+ séances de renforcement pendant 4 semaines de suite",
-    emoji: "🥇", cible: "joueur",
-  },
-  {
-    id: "renfo_ultime",     categorie: "renforcement", niveau: "ultime",
-    nom: "Gladiateur",      description: "3+ séances de renforcement pendant 8 semaines de suite",
-    emoji: "💎", cible: "joueur",
+    id: "renfo_semaine",
+    categorie: "renforcement",
+    nom: "Semaine complète",
+    description: "2 séances de renforcement musculaire dans la même semaine",
+    emoji: "💪",
+    cible: "joueur_tous",
   },
 
-  // ── Connexions — Joueurs ──────────────────────────────────────────────────
+  // ── Série sportive ────────────────────────────────────────────────────────
   {
-    id: "co_joueur_bronze", categorie: "connexion",   niveau: "bronze",
-    nom: "Prise d'habitude", description: "Connecté 5 jours de suite",
-    emoji: "🥉", cible: "joueur",
+    id: "serie_feu",
+    categorie: "basket",
+    nom: "Série de feu",
+    description: "Suivi sportif enregistré 3 jours consécutifs",
+    emoji: "🔥",
+    cible: "joueur_tous",
   },
   {
-    id: "co_joueur_argent", categorie: "connexion",   niveau: "argent",
-    nom: "Fidèle au poste",  description: "Connecté 14 jours de suite",
-    emoji: "🥈", cible: "joueur",
-  },
-  {
-    id: "co_joueur_or",     categorie: "connexion",   niveau: "or",
-    nom: "Présence totale",  description: "Connecté 30 jours de suite",
-    emoji: "🥇", cible: "joueur",
-  },
-  {
-    id: "co_joueur_ultime", categorie: "connexion",   niveau: "ultime",
-    nom: "Indestructible",   description: "Connecté 60 jours de suite",
-    emoji: "💎", cible: "joueur",
+    id: "machine",
+    categorie: "basket",
+    nom: "Machine",
+    description: "20 séances au total toutes disciplines confondues",
+    emoji: "⚡",
+    cible: "joueur_tous",
   },
 
-  // ── Connexions — Staff ────────────────────────────────────────────────────
+  // ── Connexions joueurs ────────────────────────────────────────────────────
   {
-    id: "co_staff_bronze",  categorie: "connexion",   niveau: "bronze",
-    nom: "Toujours là",      description: "Connecté 5 jours de suite",
-    emoji: "🥉", cible: "staff",
-  },
-  {
-    id: "co_staff_argent",  categorie: "connexion",   niveau: "argent",
-    nom: "Encadrant modèle", description: "Connecté 14 jours de suite",
-    emoji: "🥈", cible: "staff",
-  },
-  {
-    id: "co_staff_or",      categorie: "connexion",   niveau: "or",
-    nom: "Pilier du pôle",   description: "Connecté 30 jours de suite",
-    emoji: "🥇", cible: "staff",
-  },
-  {
-    id: "co_staff_ultime",  categorie: "connexion",   niveau: "ultime",
-    nom: "Légende du staff", description: "Connecté 60 jours de suite",
-    emoji: "💎", cible: "staff",
+    id: "presence_joueur",
+    categorie: "connexion",
+    nom: "Présence",
+    description: "Connecté 7 jours de suite",
+    emoji: "📅",
+    cible: "joueur_tous",
   },
 
-  // ── Suivi complet — Joueurs ───────────────────────────────────────────────
+  // ── Connexions staff ──────────────────────────────────────────────────────
   {
-    id: "suivi_bronze",     categorie: "suivi_complet", niveau: "bronze",
-    nom: "Vue d'ensemble",  description: "Sportif + Forme + Émotions remplis dans la même semaine",
-    emoji: "🥉", cible: "joueur",
-  },
-  {
-    id: "suivi_argent",     categorie: "suivi_complet", niveau: "argent",
-    nom: "Analyse fine",    description: "Suivi complet 2 semaines de suite",
-    emoji: "🥈", cible: "joueur",
-  },
-  {
-    id: "suivi_or",         categorie: "suivi_complet", niveau: "or",
-    nom: "Data athlete",    description: "Suivi complet 4 semaines de suite",
-    emoji: "🥇", cible: "joueur",
-  },
-  {
-    id: "suivi_ultime",     categorie: "suivi_complet", niveau: "ultime",
-    nom: "Scientifique du sport", description: "Suivi complet 8 semaines de suite",
-    emoji: "💎", cible: "joueur",
+    id: "presence_staff",
+    categorie: "connexion",
+    nom: "Présence",
+    description: "Connecté 7 jours de suite",
+    emoji: "📅",
+    cible: "staff",
   },
 
-  // ── Préparation mentale ───────────────────────────────────────────────────
+  // ── Forme / bien-être ─────────────────────────────────────────────────────
   {
-    id: "mental_bronze",    categorie: "mental",        niveau: "bronze",
-    nom: "Premier souffle", description: "1ère séance de respiration ou scan enregistrée",
-    emoji: "🥉", cible: "joueur",
+    id: "recuperation_pro",
+    categorie: "forme",
+    nom: "Récupération pro",
+    description: "Sommeil ≥ 4/5 pendant 5 jours consécutifs",
+    emoji: "😴",
+    cible: "joueur_tous",
   },
   {
-    id: "mental_argent",    categorie: "mental",        niveau: "argent",
-    nom: "Esprit en éveil",  description: "5 séances de préparation mentale",
-    emoji: "🥈", cible: "joueur",
+    id: "zen",
+    categorie: "forme",
+    nom: "Zen",
+    description: "Stress ≤ 2/5 pendant une semaine entière",
+    emoji: "🌿",
+    cible: "joueur_tous",
+  },
+
+  // ── Prépa mentale (masculin seulement) ────────────────────────────────────
+  {
+    id: "mental_fer",
+    categorie: "mental",
+    nom: "Mental de fer",
+    description: "10 séances de respiration ou scan corporel",
+    emoji: "🧘",
+    cible: "joueur_masculin",
   },
   {
-    id: "mental_or",        categorie: "mental",        niveau: "or",
-    nom: "Mental de champion", description: "10 séances de préparation mentale",
-    emoji: "🥇", cible: "joueur",
+    id: "explorateur_mental",
+    categorie: "mental",
+    nom: "Explorateur mental",
+    description: "Avoir essayé les 3 catégories de respiration",
+    emoji: "🎯",
+    cible: "joueur_masculin",
   },
   {
-    id: "mental_ultime",    categorie: "mental",        niveau: "ultime",
-    nom: "Maître du mental", description: "Activation, Relaxation et Scan corporel tous utilisés",
-    emoji: "💎", cible: "joueur",
+    id: "scan_master",
+    categorie: "mental",
+    nom: "Scan master",
+    description: "Avoir écouté le scan corporel 5 fois",
+    emoji: "🌊",
+    cible: "joueur_masculin",
+  },
+
+  // ── Complet ───────────────────────────────────────────────────────────────
+  {
+    id: "complet_masc",
+    categorie: "complet",
+    nom: "Complet",
+    description: "Toutes les sections de l'app utilisées au moins une fois",
+    emoji: "🎨",
+    cible: "joueur_masculin",
+  },
+  {
+    id: "complet_fem",
+    categorie: "complet",
+    nom: "Complet",
+    description: "Toutes les sections de l'app utilisées au moins une fois",
+    emoji: "🎨",
+    cible: "joueur_tous",
   },
 ];
 
-// Helpers
 export const BADGE_MAP = Object.fromEntries(BADGES.map(b => [b.id, b]));
 
-export const NIVEAU_ORDER: Record<BadgeNiveau, number> = {
-  bronze: 1, argent: 2, or: 3, ultime: 4,
+export const CATEGORIE_LABELS: Record<BadgeCategorie, { label: string; icon: string }> = {
+  basket:       { label: "Basket & Sport",      icon: "⛹️‍♀️" },
+  renforcement: { label: "Renforcement",         icon: "🏋️‍♂️" },
+  connexion:    { label: "Connexions",           icon: "📅" },
+  forme:        { label: "Forme & Bien-être",    icon: "💆" },
+  mental:       { label: "Préparation mentale",  icon: "🧠" },
+  complet:      { label: "Explorateur",          icon: "🎨" },
 };
 
-export const NIVEAU_COLORS: Record<BadgeNiveau, string> = {
-  bronze: "#CD7F32",
-  argent: "#C0C0C0",
-  or:     "#FFD700",
-  ultime: "#A78BFA",
+// Retourne les badges visibles selon le profil
+
+export const CATEGORIE_COLORS: Record<BadgeCategorie, string> = {
+  basket:        "#E8641C",
+  renforcement:  "#63C878",
+  connexion:     "#64A0FF",
+  forme:         "#B478FF",
+  mental:        "#FFC850",
+  complet:       "#FF78B4",
 };
 
-export const NIVEAU_LABELS: Record<BadgeNiveau, string> = {
-  bronze: "Bronze",
-  argent: "Argent",
-  or:     "Or",
-  ultime: "Ultime",
-};
+export function getBadgesPourProfil(
+  userType: "joueur" | "staff",
+  categorie?: string // "Masculin" ou "Féminin"
+): BadgeDef[] {
+  if (userType === "staff") return BADGES.filter(b => b.cible === "staff");
 
-// Utilitaire : lundi de la semaine d'une date
+  return BADGES.filter(b => {
+    if (b.cible === "staff") return false;
+    if (b.cible === "joueur_masculin") return categorie === "Masculin";
+    // joueur_tous : visible par tous sauf "complet_fem" si masculin (on a complet_masc à la place)
+    if (b.id === "complet_fem") return categorie !== "Masculin";
+    if (b.id === "complet_masc") return categorie === "Masculin";
+    return true;
+  });
+}
+
+// Utilitaire : lundi de la semaine
 export function lundiDeLaSemaine(date: Date): string {
   const d = new Date(date);
   const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day; // lundi = 1
+  const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return d.toISOString().split("T")[0];
 }

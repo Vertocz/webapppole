@@ -22,6 +22,7 @@ const ONGLETS_JOUEUR = [
   { id: "sportif", label: "Suivi sportif",    icon: "⛹️‍♀️" },
   { id: "forme",   label: "Forme",            icon: "🧘‍♀️" },
   { id: "mentale", label: "Prépa mentale",    icon: "🧠" },
+  { id: "badges",  label: "Badges",           icon: "🏅" },
 ];
 
 export default function StaffPage() {
@@ -35,6 +36,7 @@ export default function StaffPage() {
   const [hasBillets, setHasBillets] = useState(false);
   const [hasBadges, setHasBadges] = useState(false);
   const [newBadgeIds, setNewBadgeIds] = useState<string[]>([]);
+  const [badgesChecked, setBadgesChecked] = useState(false);
   const router = useRouter();
   useOneSignal(user?.id ?? null, user ? {
     type: user.masculin && user.feminin ? "staff_les_deux"
@@ -51,8 +53,8 @@ export default function StaffPage() {
     setUser(u);
     // Badges
     supabase.from("badges_joueur").select("id").eq("joueur_id", u.id).eq("joueur_type", "staff").limit(1)
-      .then(({ data }) => setHasBadges((data ?? []).length > 0));
-    checkAndAward(u.id, "staff", (ids) => { setNewBadgeIds(ids); setHasBadges(true); });
+      .then(({ data }) => { setHasBadges((data ?? []).length > 0); setBadgesChecked(true); });
+    checkAndAward(u.id, "staff", undefined, u.prenom, u.nom, (ids) => { setNewBadgeIds(ids); setHasBadges(true); });
 
     // Vérifier billets staff
     supabase.from("billets").select("id").eq("joueuse_id", u.id).limit(1)
@@ -75,7 +77,7 @@ export default function StaffPage() {
     loadJoueurs();
   }, [router]);
 
-  if (!user) return (
+  if (!user || !badgesChecked) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)" }}>
       <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--spinner)", borderTopColor: "transparent" }} />
     </div>
@@ -195,6 +197,7 @@ export default function StaffPage() {
                   {ongletActif === "sportif"  && <SuiviSportif userId={selectedJoueur.id} readOnly />}
                   {ongletActif === "forme"    && <SuiviForme userId={selectedJoueur.id} readOnly />}
                   {ongletActif === "mentale"  && <PreparationMentale userId={selectedJoueur.id} readOnly />}
+                  {ongletActif === "badges"   && <BadgesTab userId={selectedJoueur.id} userType="joueur" categorie={selectedJoueur.categorie} readOnly />}
                 </div>
               )}
             </div>

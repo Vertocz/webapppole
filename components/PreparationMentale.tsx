@@ -9,7 +9,7 @@ const SOUS_ONGLETS = [
   { id: "respiration", label: "Respiration", icon: "🫁" },
 ];
 
-export default function PreparationMentale({ userId, readOnly = false }: { userId: string; readOnly?: boolean }) {
+export default function PreparationMentale({ userId, readOnly = false, onSave }: { userId: string; readOnly?: boolean; onSave?: () => void }) {
   const [sousOnglet, setSousOnglet] = useState("emotions");
 
   return (
@@ -29,7 +29,7 @@ export default function PreparationMentale({ userId, readOnly = false }: { userI
         })}
       </div>
       {sousOnglet === "emotions" && <EmotionsTab userId={userId} readOnly={readOnly} />}
-      {sousOnglet === "respiration" && <RespirationTab userId={userId} readOnly={readOnly} />}
+      {sousOnglet === "respiration" && <RespirationTab userId={userId} readOnly={readOnly} onSave={onSave} />}
     </div>
   );
 }

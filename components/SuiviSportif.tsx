@@ -15,7 +15,7 @@ const SPORTS = [
 const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" } as React.CSSProperties;
 const labelStyle = { display: "block", fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--text-sub)", marginBottom: "0.5rem" };
 
-export default function SuiviSportif({ userId, readOnly = false }: { userId: string; readOnly?: boolean }) {
+export default function SuiviSportif({ userId, readOnly = false, onSave }: { userId: string; readOnly?: boolean; onSave?: () => void }) {
   const [activites, setActivites] = useState<Activite[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,7 +59,7 @@ export default function SuiviSportif({ userId, readOnly = false }: { userId: str
     } else {
       await supabase.from("activites").insert({ joueuse_id: userId, ...payload });
     }
-    setSaved(true); setTimeout(() => setSaved(false), 3000);
+    setSaved(true); setTimeout(() => setSaved(false), 3000); onSave?.();
     resetForm(); await load(); setSaving(false);
   };
 

@@ -18,7 +18,7 @@ const LABELS = {
 const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" } as React.CSSProperties;
 const labelStyle = { display: "block", fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--text-sub)", marginBottom: "0.5rem" };
 
-export default function SuiviForme({ userId, readOnly = false }: { userId: string; readOnly?: boolean }) {
+export default function SuiviForme({ userId, readOnly = false, onSave }: { userId: string; readOnly?: boolean; onSave?: () => void }) {
   const [data, setData] = useState<SuiviFormeType[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -63,7 +63,7 @@ export default function SuiviForme({ userId, readOnly = false }: { userId: strin
     } else {
       await supabase.from("suivi_forme").insert({ joueuse_id: userId, ...payload });
     }
-    setSaved(true); setTimeout(() => setSaved(false), 3000);
+    setSaved(true); setTimeout(() => setSaved(false), 3000); onSave?.();
     resetForm(); await load(); setSaving(false);
   };
 

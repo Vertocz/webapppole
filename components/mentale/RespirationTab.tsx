@@ -216,7 +216,7 @@ export default function RespirationTab({ userId, readOnly = false }: { userId: s
     } else {
       await supabase.from("suivi_respiration").insert({ joueur_id: userId, ...payload });
     }
-    setSaved(true); setTimeout(() => setSaved(false), 3000);
+    setSaved(true); setTimeout(() => setSaved(false), 3000); onSave?.();
     resetForm(); await load(); setSaving(false);
   };
 

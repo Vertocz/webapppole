@@ -53,7 +53,7 @@ export default function Layout({ children, userName, tabs, activeTab, onTabChang
 
           {/* Right */}
           <div className="flex items-center gap-2">
-            <div className="text-right hidden sm:block">
+            <div className="text-right">
               <p className="text-xs uppercase tracking-widest font-light" style={{ color: "var(--text-sub)" }}>
                 {theme === "staff" ? "Staff" : "Joueur"}
               </p>

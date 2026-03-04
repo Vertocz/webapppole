@@ -1,33 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
-import { BADGES, BADGE_MAP, NIVEAU_COLORS, NIVEAU_LABELS, BadgeCategorie } from "@/lib/badges";
+import { getBadgesPourProfil, CATEGORIE_LABELS, CATEGORIE_COLORS, BadgeCategorie } from "@/lib/badges";
 import Card from "./Card";
 
 interface Props {
   userId: string;
   userType: "joueur" | "staff";
+  categorie?: string;
+  readOnly?: boolean; // true = vue staff sur un joueur
 }
 
-const CATEGORIES_JOUEUR: { id: BadgeCategorie; label: string; icon: string }[] = [
-  { id: "basket",       label: "Basket",             icon: "⛹️‍♀️" },
-  { id: "renforcement", label: "Renforcement",        icon: "🏋️‍♂️" },
-  { id: "connexion",    label: "Connexions",          icon: "📅" },
-  { id: "suivi_complet",label: "Suivi complet",       icon: "📋" },
-  { id: "mental",       label: "Prépa mentale",       icon: "🧠" },
-];
-
-const CATEGORIES_STAFF: { id: BadgeCategorie; label: string; icon: string }[] = [
-  { id: "connexion", label: "Connexions", icon: "📅" },
-];
-
-export default function BadgesTab({ userId, userType }: Props) {
+export default function BadgesTab({ userId, userType, categorie, readOnly }: Props) {
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from("badges_joueur")
+    supabase
+      .from("badges_joueur")
       .select("badge_id")
       .eq("joueur_id", userId)
       .eq("joueur_type", userType)
@@ -37,74 +29,134 @@ export default function BadgesTab({ userId, userType }: Props) {
       });
   }, [userId, userType]);
 
-  const categories = userType === "staff" ? CATEGORIES_STAFF : CATEGORIES_JOUEUR;
-  const totalUnlocked = unlocked.size;
-  const totalBadges = BADGES.filter(b => b.cible === userType || b.cible === "tous").length;
+  const badges = getBadgesPourProfil(userType, categorie);
+  const totalUnlocked = badges.filter(b => unlocked.has(b.id)).length;
+  const totalBadges = badges.length;
+  const categories = [...new Set(badges.map(b => b.categorie))] as BadgeCategorie[];
 
   if (loading) return (
     <div className="flex justify-center py-12">
-      <div className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin"
-        style={{ borderColor: "var(--spinner)", borderTopColor: "transparent" }} />
+      <div
+        className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin"
+        style={{ borderColor: "var(--spinner)", borderTopColor: "transparent" }}
+      />
     </div>
   );
 
+  // ── Vue joueur : collection de médailles débloquées uniquement ──────────────
+  if (!readOnly) {
+    const unlockedBadges = badges.filter(b => unlocked.has(b.id));
+    return (
+      <div className="space-y-5">
+        <Card>
+          <h2 className="font-display text-xl mb-1" style={{ color: "var(--text-main)" }}>
+            MES MÉDAILLES
+          </h2>
+          <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
+            {unlockedBadges.length === 0
+              ? "Continue à t'entraîner pour débloquer ta première médaille !"
+              : `${unlockedBadges.length} médaille${unlockedBadges.length > 1 ? "s" : ""} débloquée${unlockedBadges.length > 1 ? "s" : ""}`}
+          </p>
+
+          {unlockedBadges.length > 0 ? (
+            <div className="grid grid-cols-3 gap-3">
+              {unlockedBadges.map(badge => (
+                <div
+                  key={badge.id}
+                  className="rounded-xl p-3 text-center"
+                  style={{
+                    background: `${CATEGORIE_COLORS[badge.categorie]}12`,
+                    border: `1px solid ${CATEGORIE_COLORS[badge.categorie]}33`,
+                  }}
+                >
+                  <Image
+                    src={`/badges/${badge.id}.png`}
+                    alt={badge.nom}
+                    width={80}
+                    height={80}
+                    className="object-contain mx-auto mb-1"
+                  />
+                  <p className="text-[11px] font-bold leading-tight" style={{ color: "var(--text-main)" }}>
+                    {badge.nom}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 mx-auto mb-3 opacity-20">
+                <Image src="/badges/presence_joueur.png" alt="" width={64} height={64} className="object-contain" />
+              </div>
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Tes médailles s&apos;afficheront ici
+              </p>
+            </div>
+          )}
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Vue staff : tous les badges avec catégories ───────────────────────────
   return (
     <div className="space-y-5">
-      {/* Progression globale */}
       <Card>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-display text-xl court-line pb-2" style={{ color: "var(--text-main)" }}>
-            MES BADGES
-          </h2>
+          <h2 className="font-display text-xl" style={{ color: "var(--text-main)" }}>BADGES</h2>
           <span className="font-display text-2xl" style={{ color: "var(--accent)" }}>
-            {totalUnlocked}<span className="text-sm font-light" style={{ color: "var(--text-muted)" }}>/{totalBadges}</span>
+            {totalUnlocked}
+            <span className="text-sm font-light" style={{ color: "var(--text-muted)" }}>/{totalBadges}</span>
           </span>
         </div>
         <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-input)" }}>
-          <div className="h-full rounded-full transition-all duration-1000"
-            style={{ width: `${(totalUnlocked / totalBadges) * 100}%`, background: "linear-gradient(90deg, var(--accent), var(--accent2))" }} />
+          <div
+            className="h-full rounded-full transition-all duration-1000"
+            style={{
+              width: `${totalBadges > 0 ? (totalUnlocked / totalBadges) * 100 : 0}%`,
+              background: "linear-gradient(90deg, var(--accent), var(--accent2))",
+            }}
+          />
         </div>
-        <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
-          {totalUnlocked === 0 ? "Continue à t'entraîner pour débloquer tes premiers badges !" :
-           totalUnlocked === totalBadges ? "🎉 Tu as débloqué tous les badges !" :
-           `${totalBadges - totalUnlocked} badge${totalBadges - totalUnlocked > 1 ? "s" : ""} restant${totalBadges - totalUnlocked > 1 ? "s" : ""}`}
-        </p>
       </Card>
 
-      {/* Badges par catégorie */}
       {categories.map(cat => {
-        const badgesCat = BADGES.filter(b =>
-          b.categorie === cat.id && (b.cible === userType || b.cible === "tous")
-        );
-
+        const badgesCat = badges.filter(b => b.categorie === cat);
+        const { label, icon } = CATEGORIE_LABELS[cat];
+        const color = CATEGORIE_COLORS[cat];
         return (
-          <div key={cat.id}>
-            <p className="text-xs font-medium tracking-widest uppercase mb-3 flex items-center gap-2"
-              style={{ color: "var(--text-sub)" }}>
-              <span>{cat.icon}</span> {cat.label}
+          <div key={cat}>
+            <p
+              className="text-xs font-medium tracking-widest uppercase mb-3 flex items-center gap-2"
+              style={{ color: "var(--text-sub)" }}
+            >
+              <span>{icon}</span>{label}
             </p>
             <div className="grid grid-cols-2 gap-3">
               {badgesCat.map(badge => {
                 const isUnlocked = unlocked.has(badge.id);
-                const color = NIVEAU_COLORS[badge.niveau];
                 return (
-                  <div key={badge.id}
+                  <div
+                    key={badge.id}
                     className="rounded-xl p-4 transition-all"
                     style={{
-                      background: isUnlocked
-                        ? `color-mix(in srgb, ${color} 8%, #0B1120)`
-                        : "#0B1120",
+                      background: isUnlocked ? `${color}10` : "#0B1120",
                       border: `1px solid ${isUnlocked ? color + "44" : "rgba(43,80,160,0.1)"}`,
                       opacity: isUnlocked ? 1 : 0.45,
-                    }}>
-                    {/* Emoji / futur PNG */}
-                    <div className="text-3xl mb-2" style={{ filter: isUnlocked ? "none" : "grayscale(1)" }}>
-                      {isUnlocked ? badge.emoji : "🔒"}
+                    }}
+                  >
+                    <div className="mb-2" style={{ filter: isUnlocked ? "none" : "grayscale(1)" }}>
+                      <Image
+                        src={`/badges/${badge.id}.png`}
+                        alt={badge.nom}
+                        width={56}
+                        height={56}
+                        className="object-contain"
+                      />
                     </div>
-                    <div className="text-[10px] font-bold tracking-wider uppercase mb-0.5" style={{ color: isUnlocked ? color : "var(--text-muted)" }}>
-                      {NIVEAU_LABELS[badge.niveau]}
-                    </div>
-                    <p className="text-xs font-medium mb-1" style={{ color: isUnlocked ? "var(--text-main)" : "var(--text-muted)" }}>
+                    <p
+                      className="text-xs font-bold mb-1"
+                      style={{ color: isUnlocked ? "var(--text-main)" : "var(--text-muted)" }}
+                    >
                       {badge.nom}
                     </p>
                     <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
