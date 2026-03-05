@@ -67,7 +67,7 @@ async function hasRenfoSemaine(userId: string): Promise<boolean> {
   const { data } = await supabase.from("activites").select("id")
     .eq("joueuse_id", userId).eq("sport", "🏋️‍♂️ Renforcement musculaire")
     .gte("date", lundi).lte("date", dimanche.toISOString().split("T")[0]);
-  return (data ?? []).length >= 2;
+  return (data ?? []).length >= 3;
 }
 
 async function getSommeilConsecutif(userId: string): Promise<number> {
