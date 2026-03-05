@@ -15,9 +15,9 @@ const EMOTIONS = [
   { nom: "Epuisé",     emoji: "😩", couleur: "#818CF8", imagePath: "epuise.png" },
   { nom: "Fort",       emoji: "💪", couleur: "#F472B6", imagePath: "fort.png" },
   { nom: "Frustré",    emoji: "😖", couleur: "#6EE7B7", imagePath: "frustre.png" },
-  { nom: "Inquiet",    emoji: "😰", couleur: "#FCA5A5", imagePath: "inquiet.jpeg" },
-  { nom: "Joyeux",     emoji: "😄", couleur: "#86efac", imagePath: "joyeux.jpeg" },
-  { nom: "Motivé",     emoji: "🏃", couleur: "#FDE68A", imagePath: "motive.jpeg" },
+  { nom: "Inquiet",    emoji: "😰", couleur: "#FCA5A5", imagePath: "inquiet.png" },
+  { nom: "Joyeux",     emoji: "😄", couleur: "#86efac", imagePath: "joyeux.png" },
+  { nom: "Motivé",     emoji: "🏃", couleur: "#FDE68A", imagePath: "motive.png" },
 ];
 
 const DECLENCHEURS_OPTIONS = [
