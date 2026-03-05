@@ -41,7 +41,7 @@ async function getTotalActivites(userId: string): Promise<number> {
 
 async function getTotalBasket(userId: string): Promise<number> {
   const { count } = await supabase.from("activites").select("id", { count: "exact", head: true })
-    .eq("joueuse_id", userId).eq("sport", "⛹️‍♀️ Basket");
+    .eq("joueuse_id", userId).ilike("sport", "%Basket%");
   return count ?? 0;
 }
 
@@ -177,10 +177,14 @@ export function useBadges() {
 
     const nouveaux = [...merited].filter(id => !deja.has(id) && BADGES.find(b => b.id === id));
     if (nouveaux.length > 0) {
-      await supabase.from("badges_joueur").insert(
-        nouveaux.map(badge_id => ({ joueur_id: userId, joueur_type: userType, prenom, nom, badge_id, unlocked_at: new Date().toISOString() }))
+      const { error: insertError } = await supabase.from("badges_joueur").insert(
+        nouveaux.map(badge_id => ({ joueur_id: userId, joueur_type: userType, badge_id, unlocked_at: new Date().toISOString() }))
       );
-      onNewBadges(nouveaux);
+      if (!insertError) {
+        onNewBadges(nouveaux);
+      } else {
+        console.error("[useBadges] Erreur insert badges:", insertError.message);
+      }
     }
   }, []);
 
