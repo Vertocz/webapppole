@@ -106,7 +106,7 @@ export default function JoueuseePage() {
       <PwaBanner />
       <NotificationsPermission />
       {newBadgeIds.length > 0 && (
-        <BadgePopup badgeIds={newBadgeIds} onDone={() => setNewBadgeIds([])} />
+        <BadgePopup badgeIds={newBadgeIds} onDone={() => setNewBadgeIds([])} categorie={user.categorie} />
       )}
     </>
   );
