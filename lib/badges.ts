@@ -12,6 +12,7 @@ export interface BadgeDef {
   nom: string;
   description: string;
   emoji: string;
+  image?: string;
   // "joueur_tous" = tous les joueurs, "joueur_masculin" = masculin seulement, "staff" = staff
   cible: "joueur_tous" | "joueur_masculin" | "staff";
 }
@@ -45,6 +46,7 @@ export const BADGES: BadgeDef[] = [
     description: "Suivi sportif enregistré 3 jours consécutifs",
     emoji: "🔥",
     cible: "joueur_tous",
+    image: "serie_de_feu.png",
   },
   {
     id: "machine",
