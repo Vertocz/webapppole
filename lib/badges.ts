@@ -31,8 +31,8 @@ export const BADGES: BadgeDef[] = [
   {
     id: "renfo_semaine",
     categorie: "renforcement",
-    nom: "Semaine complète",
-    description: "2 séances de renforcement musculaire dans la même semaine",
+    nom: "Semaine chargée",
+    description: "3 séances de renforcement musculaire dans la même semaine",
     emoji: "💪",
     cible: "joueur_tous",
   },
