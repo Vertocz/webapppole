@@ -146,7 +146,7 @@ export default function BadgesTab({ userId, userType, categorie, readOnly }: Pro
                   >
                     <div className="mb-2" style={{ filter: isUnlocked ? "none" : "grayscale(1)" }}>
                       <Image
-                        src={`/badges/${badge.image}`}
+                        src={`/badges/${badge.id}.png`}
                         alt={badge.nom}
                         width={56}
                         height={56}
