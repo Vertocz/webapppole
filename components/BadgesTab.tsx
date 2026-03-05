@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
-import { getBadgesPourProfil, CATEGORIE_LABELS, CATEGORIE_COLORS, BadgeCategorie } from "@/lib/badges";
+import { getBadgesPourProfil, CATEGORIE_LABELS, CATEGORIE_COLORS, BadgeCategorie, getBadgeImagePath } from "@/lib/badges";
 import Card from "./Card";
 
 interface Props {
@@ -70,7 +70,7 @@ export default function BadgesTab({ userId, userType, categorie, readOnly }: Pro
                   }}
                 >
                   <Image
-                    src={`/badges/${badge.id}.png`}
+                    src={getBadgeImagePath(badge, categorie)}
                     alt={badge.nom}
                     width={80}
                     height={80}
@@ -146,7 +146,7 @@ export default function BadgesTab({ userId, userType, categorie, readOnly }: Pro
                   >
                     <div className="mb-2" style={{ filter: isUnlocked ? "none" : "grayscale(1)" }}>
                       <Image
-                        src={`/badges/${badge.id}.png`}
+                        src={getBadgeImagePath(badge, categorie)}
                         alt={badge.nom}
                         width={56}
                         height={56}

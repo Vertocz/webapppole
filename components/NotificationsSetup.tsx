@@ -28,10 +28,10 @@ export function useOneSignal(userId: string | null, tags?: OneSignalTags) {
           notifyButton: { enable: false },
           allowLocalhostAsSecureOrigin: true,
           serviceWorkerParam: { scope: "/" },
-          serviceWorkerPath: "/OneSignalSDKWorker.js",
+          // ✅ sw.js unifié — gère à la fois le cache ET les push OneSignal
+          serviceWorkerPath: "/sw.js",
         });
         await OS.login(userId);
-        // Tags pour le ciblage par segment
         if (tags) {
           await OS.User.addTags({
             type: tags.type,
@@ -41,7 +41,9 @@ export function useOneSignal(userId: string | null, tags?: OneSignalTags) {
       });
     };
 
-    return () => { if (document.head.contains(script)) document.head.removeChild(script); };
+    return () => {
+      if (document.head.contains(script)) document.head.removeChild(script);
+    };
   }, [userId, tags]);
 }
 
@@ -63,20 +65,15 @@ export default function NotificationsPermission() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("Notification" in window)) return;
+    if (Notification.permission === "granted") return;
+    if (Notification.permission === "denied") return;
 
-    // Afficher si : permission pas encore accordée ET (PWA installée OU permission jamais demandée)
-    const notGranted = Notification.permission !== "granted";
-    const notDenied = Notification.permission !== "denied";
+    // Sur navigateur : ne pas redemander si déjà demandé
+    const alreadyAsked = localStorage.getItem("notif-asked");
+    if (!isPWA() && alreadyAsked) return;
 
-    if (notGranted && notDenied) {
-      // Sur PWA : toujours proposer à chaque session
-      // Sur navigateur : seulement si jamais demandé
-      const alreadyAsked = localStorage.getItem("notif-asked");
-      if (isPWA() || !alreadyAsked) {
-        const timer = setTimeout(() => setVisible(true), 2500);
-        return () => clearTimeout(timer);
-      }
-    }
+    const timer = setTimeout(() => setVisible(true), 2500);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleAccept = async () => {
@@ -103,7 +100,6 @@ export default function NotificationsPermission() {
 
   const handleDismiss = () => {
     if (!isPWA()) localStorage.setItem("notif-asked", "1");
-    // Sur PWA on ne sauvegarde pas → réapparaîtra à la prochaine session
     setVisible(false);
   };
 

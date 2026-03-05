@@ -12,7 +12,6 @@ export interface BadgeDef {
   nom: string;
   description: string;
   emoji: string;
-  image?: string;
   // "joueur_tous" = tous les joueurs, "joueur_masculin" = masculin seulement, "staff" = staff
   cible: "joueur_tous" | "joueur_masculin" | "staff";
 }
@@ -32,8 +31,8 @@ export const BADGES: BadgeDef[] = [
   {
     id: "renfo_semaine",
     categorie: "renforcement",
-    nom: "Semaine chargée",
-    description: "3 séances de renforcement musculaire dans la même semaine",
+    nom: "Semaine complète",
+    description: "2 séances de renforcement musculaire dans la même semaine",
     emoji: "💪",
     cible: "joueur_tous",
   },
@@ -46,7 +45,6 @@ export const BADGES: BadgeDef[] = [
     description: "Suivi sportif enregistré 3 jours consécutifs",
     emoji: "🔥",
     cible: "joueur_tous",
-    image: "serie_de_feu.png",
   },
   {
     id: "machine",
@@ -176,6 +174,17 @@ export function getBadgesPourProfil(
     if (b.id === "complet_masc") return categorie === "Masculin";
     return true;
   });
+}
+
+// Retourne le chemin de l'image PNG selon le genre du joueur
+// Les badges "joueur_tous" ont une variante _masc / _fem
+// Les badges genrés ou staff utilisent une seule image
+export function getBadgeImagePath(badge: BadgeDef, categorie?: string): string {
+  if (badge.cible === "joueur_tous") {
+    const suffix = categorie === "Masculin" ? "_masc" : "_fem";
+    return `/badges/${badge.id}${suffix}.png`;
+  }
+  return `/badges/${badge.id}.png`;
 }
 
 // Utilitaire : lundi de la semaine

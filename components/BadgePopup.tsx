@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { BADGE_MAP, CATEGORIE_COLORS } from "@/lib/badges";
+import { BADGE_MAP, CATEGORIE_COLORS, getBadgeImagePath } from "@/lib/badges";
 
 interface Props {
   badgeIds: string[];
   onDone: () => void;
+  categorie?: string;
 }
 
-export default function BadgePopup({ badgeIds, onDone }: Props) {
+export default function BadgePopup({ badgeIds, onDone, categorie }: Props) {
   const [index, setIndex] = useState(0);
   const [visible, setVisible] = useState(true);
 
@@ -68,7 +69,7 @@ export default function BadgePopup({ badgeIds, onDone }: Props) {
           {/* Image PNG */}
           <div className="relative inline-block mb-4">
             <Image
-              src={`/badges/${badge.id}.png`}
+              src={getBadgeImagePath(badge, categorie)}
               alt={badge.nom}
               width={160}
               height={160}

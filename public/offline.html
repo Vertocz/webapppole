@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ParaBasket — Hors ligne</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100svh;
+      background: #05080F;
+      color: #CBD5E1;
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding: 2rem;
+      text-align: center;
+    }
+    .icon { font-size: 3rem; }
+    h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #E2E8F0;
+    }
+    p { font-size: 0.875rem; color: #64748B; line-height: 1.6; max-width: 280px; }
+    button {
+      margin-top: 0.5rem;
+      padding: 0.75rem 2rem;
+      border-radius: 0.75rem;
+      border: 1px solid rgba(43,80,160,0.4);
+      background: linear-gradient(135deg, #1B3A8C, #2952CC);
+      color: white;
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="icon">📡</div>
+  <h1>Pas de connexion</h1>
+  <p>Vérifie ta connexion internet puis réessaie.</p>
+  <button onclick="window.location.reload()">Réessayer</button>
+</body>
+</html>
