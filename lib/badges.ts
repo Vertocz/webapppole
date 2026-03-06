@@ -112,15 +112,7 @@ export const BADGES: BadgeDef[] = [
 
   // ── Complet ─────────────────────────────────────────────────────────────────
   {
-    id: "complet_masc",
-    categorie: "complet",
-    nom: "Complet",
-    description: "Toutes les sections de l'app utilisées au moins une fois",
-    emoji: "🎨",
-    cible: "joueur_masculin",
-  },
-  {
-    id: "complet_fem",
+    id: "complet",
     categorie: "complet",
     nom: "Complet",
     description: "Toutes les sections de l'app utilisées au moins une fois",
@@ -172,19 +164,18 @@ export function getBadgesPourProfil(
     // Joueur
     if (b.cible === "staff") return false;
     if (b.cible === "joueur_masculin") return categorie === "Masculin";
-    // joueur_tous : distinguer masc/fém pour complet
-    if (b.id === "complet_fem")  return categorie !== "Masculin";
-    if (b.id === "complet_masc") return categorie === "Masculin";
     return true;
   });
 }
 
 /** Chemin de l'image PNG selon le genre du joueur */
 export function getBadgeImagePath(badge: BadgeDef, categorie?: string): string {
-  // Les badges "tous" ont une variante _masc / _fem pour les joueurs
-  // Pour le staff on utilise le suffixe _staff s'il existe, sinon _masc par défaut
-  if (badge.cible === "tous" || badge.cible === "joueur_tous") {
-    if (!categorie) return `/badges/${badge.id}_masc.png`; // staff ou inconnu
+  // Badges "tous" (presence, zen, recuperation_pro) : une seule image sans suffixe
+  if (badge.cible === "tous") {
+    return `/badges/${badge.id}.png`;
+  }
+  // Badges "joueur_tous" : variante _masc / _fem
+  if (badge.cible === "joueur_tous") {
     const suffix = categorie === "Masculin" ? "_masc" : "_fem";
     return `/badges/${badge.id}${suffix}.png`;
   }
