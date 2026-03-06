@@ -17,6 +17,8 @@ export function useOneSignal(userId: string | null, tags?: OneSignalTags) {
       const OS = (window as any).OneSignal;
       if (OS && tags) {
         OS.login(userId).then(() => {
+          OS.User.removeTag("type");
+          OS.User.removeTag("prenom");
           OS.User.addTag("role", tags.role);
           if (tags.pole) OS.User.addTag("pole", tags.pole);
         });
@@ -47,6 +49,10 @@ export function useOneSignal(userId: string | null, tags?: OneSignalTags) {
         // addTag (singulier) — plus fiable que addTags en v16
         // Ces Data Tags sont filtrables dans les segments OneSignal
         if (tags) {
+          // Supprime les anciens tags (migration type/prenom → role/pole)
+          await OS.User.removeTag("type");
+          await OS.User.removeTag("prenom");
+          // Pose les nouveaux
           await OS.User.addTag("role", tags.role);
           if (tags.pole) await OS.User.addTag("pole", tags.pole);
         }
