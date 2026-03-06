@@ -33,7 +33,7 @@ export const BADGES: BadgeDef[] = [
     id: "renfo_semaine",
     categorie: "renforcement",
     nom: "Semaine complète",
-    description: "3 séances de renforcement musculaire dans la même semaine",
+    description: "2 séances de renforcement musculaire dans la même semaine",
     emoji: "💪",
     cible: "joueur_tous",
   },
@@ -112,7 +112,15 @@ export const BADGES: BadgeDef[] = [
 
   // ── Complet ─────────────────────────────────────────────────────────────────
   {
-    id: "complet",
+    id: "complet_masc",
+    categorie: "complet",
+    nom: "Complet",
+    description: "Toutes les sections de l'app utilisées au moins une fois",
+    emoji: "🎨",
+    cible: "joueur_masculin",
+  },
+  {
+    id: "complet_fem",
     categorie: "complet",
     nom: "Complet",
     description: "Toutes les sections de l'app utilisées au moins une fois",
@@ -164,17 +172,27 @@ export function getBadgesPourProfil(
     // Joueur
     if (b.cible === "staff") return false;
     if (b.cible === "joueur_masculin") return categorie === "Masculin";
+    // joueur_tous : distinguer masc/fém pour complet
+    if (b.id === "complet_fem")  return categorie !== "Masculin";
+    if (b.id === "complet_masc") return categorie === "Masculin";
     return true;
   });
 }
 
 /** Chemin de l'image PNG selon le genre du joueur */
+// Badges "joueur_tous" qui ont une seule image (pas de variante _masc/_fem)
+const SINGLE_IMAGE_BADGES = new Set(["complet"]);
+
 export function getBadgeImagePath(badge: BadgeDef, categorie?: string): string {
-  // Badges "tous" (presence, zen, recuperation_pro) : une seule image sans suffixe
+  // Badges communs à tous : une seule image sans suffixe
   if (badge.cible === "tous") {
     return `/badges/${badge.id}.png`;
   }
-  // Badges "joueur_tous" : variante _masc / _fem
+  // Badges joueur_tous avec une seule image (ex: complet.png)
+  if (badge.cible === "joueur_tous" && SINGLE_IMAGE_BADGES.has(badge.id)) {
+    return `/badges/${badge.id}.png`;
+  }
+  // Badges joueur_tous : variante _masc / _fem
   if (badge.cible === "joueur_tous") {
     const suffix = categorie === "Masculin" ? "_masc" : "_fem";
     return `/badges/${badge.id}${suffix}.png`;

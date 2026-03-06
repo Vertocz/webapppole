@@ -148,8 +148,10 @@ export default function StaffPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setProfilOpen(true)}
-                className="text-right transition-opacity hover:opacity-70 hidden sm:block"
+                className="text-right transition-opacity hover:opacity-70"
               >
+                <p className="text-xs uppercase tracking-widest font-light"
+                  style={{ color: "var(--text-sub)" }}>Staff</p>
                 <p className="text-sm font-medium underline decoration-dotted underline-offset-2"
                   style={{ color: "var(--text-main)", textDecorationColor: "var(--border)" }}>
                   {user.prenom} {user.nom}
