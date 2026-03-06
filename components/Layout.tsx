@@ -1,19 +1,28 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import ProfilModal from "@/components/ProfilModal";
 
 interface LayoutProps {
   children: React.ReactNode;
   userName: string;
+  userId: string;
+  userType: "joueuse" | "staff";
+  prenom: string;
+  nom: string;
+  telephone: string;
   tabs: { id: string; label: string; icon: string }[];
   activeTab: string;
   onTabChange: (tab: string) => void;
+  onPhoneUpdated: (newPhone: string) => void;
   theme: "joueur" | "staff";
 }
 
-export default function Layout({ children, userName, tabs, activeTab, onTabChange, theme }: LayoutProps) {
+export default function Layout({ children, userName, userId, userType, prenom, nom, telephone, tabs, activeTab, onTabChange, onPhoneUpdated, theme }: LayoutProps) {
   const router = useRouter();
+  const [profilOpen, setProfilOpen] = useState(false);
 
   return (
     <div className="relative min-h-screen z-10">
@@ -53,12 +62,15 @@ export default function Layout({ children, userName, tabs, activeTab, onTabChang
 
           {/* Right */}
           <div className="flex items-center gap-2">
-            <div className="text-right">
+            <button
+              onClick={() => setProfilOpen(true)}
+              className="text-right transition-opacity hover:opacity-70 active:opacity-50"
+            >
               <p className="text-xs uppercase tracking-widest font-light" style={{ color: "var(--text-sub)" }}>
                 {theme === "staff" ? "Staff" : "Joueur"}
               </p>
-              <p className="text-sm font-medium" style={{ color: "var(--text-main)" }}>{userName}</p>
-            </div>
+              <p className="text-sm font-medium underline decoration-dotted underline-offset-2" style={{ color: "var(--text-main)", textDecorationColor: "var(--border)" }}>{userName}</p>
+            </button>
             <button
               onClick={() => { sessionStorage.clear(); router.push("/"); }}
               className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
@@ -106,6 +118,22 @@ export default function Layout({ children, userName, tabs, activeTab, onTabChang
       <main className="max-w-2xl mx-auto px-4 py-6">
         {children}
       </main>
+
+      {/* Modal profil */}
+      {profilOpen && (
+        <ProfilModal
+          userId={userId}
+          userType={userType}
+          prenom={prenom}
+          nom={nom}
+          telephone={telephone}
+          onClose={() => setProfilOpen(false)}
+          onPhoneUpdated={(newPhone) => {
+            onPhoneUpdated(newPhone);
+            setProfilOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
