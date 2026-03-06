@@ -1,7 +1,3 @@
-// ─── Définition des badges ────────────────────────────────────────────────────
-// Pour remplacer l'emoji par une image PNG :
-// Ajouter image?: string et utiliser <img src={`/badges/${badge.image}`} />
-
 export type BadgeCategorie =
   | "basket" | "renforcement" | "connexion"
   | "forme" | "mental" | "complet";
@@ -12,12 +8,17 @@ export interface BadgeDef {
   nom: string;
   description: string;
   emoji: string;
-  // "joueur_tous" = tous les joueurs, "joueur_masculin" = masculin seulement, "staff" = staff
-  cible: "joueur_tous" | "joueur_masculin" | "staff";
+  /**
+   * "tous"           = joueurs (masc + fém) ET staff
+   * "joueur_tous"    = tous les joueurs (masc + fém), pas le staff
+   * "joueur_masculin"= joueurs masculins uniquement
+   * "staff"          = staff uniquement (badges exclusifs staff si besoin)
+   */
+  cible: "tous" | "joueur_tous" | "joueur_masculin" | "staff";
 }
 
 export const BADGES: BadgeDef[] = [
-  // ── Basket ────────────────────────────────────────────────────────────────
+  // ── Basket ──────────────────────────────────────────────────────────────────
   {
     id: "basket_engage",
     categorie: "basket",
@@ -27,7 +28,7 @@ export const BADGES: BadgeDef[] = [
     cible: "joueur_tous",
   },
 
-  // ── Renforcement ──────────────────────────────────────────────────────────
+  // ── Renforcement ────────────────────────────────────────────────────────────
   {
     id: "renfo_semaine",
     categorie: "renforcement",
@@ -37,7 +38,7 @@ export const BADGES: BadgeDef[] = [
     cible: "joueur_tous",
   },
 
-  // ── Série sportive ────────────────────────────────────────────────────────
+  // ── Série sportive ──────────────────────────────────────────────────────────
   {
     id: "serie_feu",
     categorie: "basket",
@@ -55,34 +56,24 @@ export const BADGES: BadgeDef[] = [
     cible: "joueur_tous",
   },
 
-  // ── Connexions joueurs ────────────────────────────────────────────────────
+  // ── Connexion — commun à TOUS (joueurs + staff) ─────────────────────────────
   {
-    id: "presence_joueur",
+    id: "presence",
     categorie: "connexion",
     nom: "Présence",
     description: "Connecté 7 jours de suite",
     emoji: "📅",
-    cible: "joueur_tous",
+    cible: "tous",
   },
 
-  // ── Connexions staff ──────────────────────────────────────────────────────
-  {
-    id: "presence_staff",
-    categorie: "connexion",
-    nom: "Présence",
-    description: "Connecté 7 jours de suite",
-    emoji: "📅",
-    cible: "staff",
-  },
-
-  // ── Forme / bien-être ─────────────────────────────────────────────────────
+  // ── Forme / bien-être — commun à TOUS ──────────────────────────────────────
   {
     id: "recuperation_pro",
     categorie: "forme",
     nom: "Récupération pro",
     description: "Sommeil ≥ 4/5 pendant 5 jours consécutifs",
     emoji: "😴",
-    cible: "joueur_tous",
+    cible: "tous",
   },
   {
     id: "zen",
@@ -90,10 +81,10 @@ export const BADGES: BadgeDef[] = [
     nom: "Zen",
     description: "Stress ≤ 2/5 pendant une semaine entière",
     emoji: "🌿",
-    cible: "joueur_tous",
+    cible: "tous",
   },
 
-  // ── Prépa mentale (masculin seulement) ────────────────────────────────────
+  // ── Prépa mentale (masculin seulement) ─────────────────────────────────────
   {
     id: "mental_fer",
     categorie: "mental",
@@ -119,7 +110,7 @@ export const BADGES: BadgeDef[] = [
     cible: "joueur_masculin",
   },
 
-  // ── Complet ───────────────────────────────────────────────────────────────
+  // ── Complet ─────────────────────────────────────────────────────────────────
   {
     id: "complet_masc",
     categorie: "complet",
@@ -141,15 +132,13 @@ export const BADGES: BadgeDef[] = [
 export const BADGE_MAP = Object.fromEntries(BADGES.map(b => [b.id, b]));
 
 export const CATEGORIE_LABELS: Record<BadgeCategorie, { label: string; icon: string }> = {
-  basket:       { label: "Basket & Sport",      icon: "⛹️‍♀️" },
-  renforcement: { label: "Renforcement",         icon: "🏋️‍♂️" },
-  connexion:    { label: "Connexions",           icon: "📅" },
-  forme:        { label: "Forme & Bien-être",    icon: "💆" },
-  mental:       { label: "Préparation mentale",  icon: "🧠" },
-  complet:      { label: "Explorateur",          icon: "🎨" },
+  basket:       { label: "Basket & Sport",     icon: "⛹️‍♀️" },
+  renforcement: { label: "Renforcement",        icon: "🏋️‍♂️" },
+  connexion:    { label: "Connexions",          icon: "📅" },
+  forme:        { label: "Forme & Bien-être",   icon: "💆" },
+  mental:       { label: "Préparation mentale", icon: "🧠" },
+  complet:      { label: "Explorateur",         icon: "🎨" },
 };
-
-// Retourne les badges visibles selon le profil
 
 export const CATEGORIE_COLORS: Record<BadgeCategorie, string> = {
   basket:        "#E8641C",
@@ -160,34 +149,48 @@ export const CATEGORIE_COLORS: Record<BadgeCategorie, string> = {
   complet:       "#FF78B4",
 };
 
+/**
+ * Retourne les badges visibles pour un profil donné.
+ *
+ * cible "tous"           → visible par tout le monde
+ * cible "joueur_tous"    → visible par tous les joueurs (pas le staff)
+ * cible "joueur_masculin"→ visible seulement si joueur Masculin
+ * cible "staff"          → visible seulement par le staff
+ */
 export function getBadgesPourProfil(
   userType: "joueur" | "staff",
-  categorie?: string // "Masculin" ou "Féminin"
+  categorie?: string
 ): BadgeDef[] {
-  if (userType === "staff") return BADGES.filter(b => b.cible === "staff");
-
   return BADGES.filter(b => {
+    if (b.cible === "tous") return true;
+
+    if (userType === "staff") {
+      // Le staff ne voit que "tous" (déjà inclus) et "staff"
+      return b.cible === "staff";
+    }
+
+    // Joueur
     if (b.cible === "staff") return false;
     if (b.cible === "joueur_masculin") return categorie === "Masculin";
-    // joueur_tous : visible par tous sauf "complet_fem" si masculin (on a complet_masc à la place)
-    if (b.id === "complet_fem") return categorie !== "Masculin";
+    // joueur_tous : distinguer masc/fém pour complet
+    if (b.id === "complet_fem")  return categorie !== "Masculin";
     if (b.id === "complet_masc") return categorie === "Masculin";
     return true;
   });
 }
 
-// Retourne le chemin de l'image PNG selon le genre du joueur
-// Les badges "joueur_tous" ont une variante _masc / _fem
-// Les badges genrés ou staff utilisent une seule image
+/** Chemin de l'image PNG selon le genre du joueur */
 export function getBadgeImagePath(badge: BadgeDef, categorie?: string): string {
-  if (badge.cible === "joueur_tous") {
+  // Les badges "tous" ont une variante _masc / _fem pour les joueurs
+  // Pour le staff on utilise le suffixe _staff s'il existe, sinon _masc par défaut
+  if (badge.cible === "tous" || badge.cible === "joueur_tous") {
+    if (!categorie) return `/badges/${badge.id}_masc.png`; // staff ou inconnu
     const suffix = categorie === "Masculin" ? "_masc" : "_fem";
     return `/badges/${badge.id}${suffix}.png`;
   }
   return `/badges/${badge.id}.png`;
 }
 
-// Utilitaire : lundi de la semaine
 export function lundiDeLaSemaine(date: Date): string {
   const d = new Date(date);
   const day = d.getDay();

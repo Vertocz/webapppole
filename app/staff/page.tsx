@@ -109,7 +109,7 @@ export default function StaffPage() {
     ...(hasBillets ? [{ id: "billets",  label: "Mes billets",    icon: "🎫" }] : []),
     { id: "joueurs",  label: "Suivi joueurs", icon: "📊" },
     { id: "tournois", label: "Tournois",      icon: "🏆" },
-    ...(hasBadges  ? [{ id: "badges",   label: "Badges",         icon: "🏅" }] : []),
+    { id: "badges",   label: "Badges",         icon: "🏅" },
   ];
 
   return (

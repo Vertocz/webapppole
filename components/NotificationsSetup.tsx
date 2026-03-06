@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-// ─── Hook OneSignal ───────────────────────────────────────────────────────────
 interface OneSignalTags {
   type: "joueur_masculin" | "joueur_feminin" | "staff_masculin" | "staff_feminin" | "staff_les_deux";
   prenom: string;
@@ -14,77 +13,83 @@ export function useOneSignal(userId: string | null, tags?: OneSignalTags) {
     const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
     if (!appId) return;
 
+    if ((window as any)["__onesignal_loaded"]) {
+      const OS = (window as any).OneSignal;
+      if (OS && tags) {
+        OS.login(userId).then(() => {
+          OS.User.addTag("type",   tags.type);
+          OS.User.addTag("prenom", tags.prenom);
+        });
+      }
+      return;
+    }
+
     const script = document.createElement("script");
     script.src = "https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js";
     script.defer = true;
     document.head.appendChild(script);
 
     script.onload = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const OneSignalDeferred: any[] = (window as any).OneSignalDeferred = (window as any).OneSignalDeferred || [];
+      (window as any)["__onesignal_loaded"] = true;
+      const OneSignalDeferred: any[] = (window as any).OneSignalDeferred =
+        (window as any).OneSignalDeferred || [];
+
       OneSignalDeferred.push(async (OS: any) => {
         await OS.init({
           appId,
           notifyButton: { enable: false },
           allowLocalhostAsSecureOrigin: true,
           serviceWorkerParam: { scope: "/" },
-          // ✅ sw.js unifié — gère à la fois le cache ET les push OneSignal
-          serviceWorkerPath: "/sw.js",
+          serviceWorkerPath: "/OneSignalSDKWorker.js",
         });
+        // External User ID → retrouver l'utilisateur par son ID Supabase dans OneSignal
         await OS.login(userId);
+        // addTag (singulier) — plus fiable que addTags en v16
+        // Ces Data Tags sont filtrables dans les segments OneSignal
         if (tags) {
-          await OS.User.addTags({
-            type: tags.type,
-            prenom: tags.prenom,
-          });
+          await OS.User.addTag("type",   tags.type);
+          await OS.User.addTag("prenom", tags.prenom);
         }
       });
     };
 
-    return () => {
-      if (document.head.contains(script)) document.head.removeChild(script);
-    };
-  }, [userId, tags]);
+    return () => { if (document.head.contains(script)) document.head.removeChild(script); };
+  // On ne redéclenche pas si tags change (ne change jamais en session)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 }
 
-// ─── Détection PWA ────────────────────────────────────────────────────────────
 function isPWA(): boolean {
   if (typeof window === "undefined") return false;
   if (window.matchMedia("(display-mode: standalone)").matches) return true;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if ((navigator as any).standalone === true) return true;
   return false;
 }
 
-// ─── Popup notification ───────────────────────────────────────────────────────
 export default function NotificationsPermission() {
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible]       = useState(false);
   const [requesting, setRequesting] = useState(false);
-  const [result, setResult] = useState<"granted" | "denied" | null>(null);
+  const [result, setResult]         = useState<"granted" | "denied" | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("Notification" in window)) return;
-    if (Notification.permission === "granted") return;
-    if (Notification.permission === "denied") return;
-
-    // Sur navigateur : ne pas redemander si déjà demandé
-    const alreadyAsked = localStorage.getItem("notif-asked");
-    if (!isPWA() && alreadyAsked) return;
-
-    const timer = setTimeout(() => setVisible(true), 2500);
-    return () => clearTimeout(timer);
+    if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+      const alreadyAsked = localStorage.getItem("notif-asked");
+      if (isPWA() || !alreadyAsked) {
+        const timer = setTimeout(() => setVisible(true), 2500);
+        return () => clearTimeout(timer);
+      }
+    }
   }, []);
 
   const handleAccept = async () => {
     setRequesting(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const OS = (window as any).OneSignal;
       if (OS?.Notifications) {
         await OS.Notifications.requestPermission();
-        const granted = OS.Notifications.permission;
-        setResult(granted ? "granted" : "denied");
+        setResult(OS.Notifications.permission ? "granted" : "denied");
       } else {
         const r = await Notification.requestPermission();
         setResult(r === "granted" ? "granted" : "denied");
@@ -110,7 +115,6 @@ export default function NotificationsPermission() {
       <div className="rounded-2xl p-4 shadow-2xl"
         style={{ background: "linear-gradient(145deg, #0E1628, #111E35)", border: "1px solid rgba(43,80,160,0.35)", boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}>
         <div className="h-0.5 rounded-full mb-4" style={{ background: "linear-gradient(90deg, #1B3A8C, #E8192C)" }} />
-
         {result === "granted" ? (
           <div className="text-center py-2">
             <p className="text-2xl mb-1">✅</p>
@@ -127,9 +131,7 @@ export default function NotificationsPermission() {
             <div className="flex items-start gap-3 mb-4">
               <span className="text-2xl">🔔</span>
               <div>
-                <p className="font-display text-sm tracking-wider mb-1" style={{ color: "var(--text-main)" }}>
-                  ACTIVER LES NOTIFICATIONS
-                </p>
+                <p className="font-display text-sm tracking-wider mb-1" style={{ color: "var(--text-main)" }}>ACTIVER LES NOTIFICATIONS</p>
                 <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
                   Reçois les rappels de suivi et sois alerté quand tes billets sont disponibles.
                 </p>
@@ -141,8 +143,7 @@ export default function NotificationsPermission() {
                 style={{ background: "linear-gradient(135deg, #1B3A8C, #2952CC)", color: "white", boxShadow: "0 4px 16px rgba(27,58,140,0.4)", opacity: requesting ? 0.6 : 1 }}>
                 {requesting ? "..." : "ACTIVER"}
               </button>
-              <button onClick={handleDismiss}
-                className="px-4 py-2.5 rounded-xl text-xs font-medium"
+              <button onClick={handleDismiss} className="px-4 py-2.5 rounded-xl text-xs font-medium"
                 style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}>
                 Plus tard
               </button>
