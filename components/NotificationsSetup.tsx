@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 
 interface OneSignalTags {
-  type: "joueur_masculin" | "joueur_feminin" | "staff_masculin" | "staff_feminin" | "staff_les_deux";
-  prenom: string;
+  pole: "masculin" | "feminin" | null; // null = staff sans pôle assigné
+  role: "player" | "staff";
 }
 
 export function useOneSignal(userId: string | null, tags?: OneSignalTags) {
@@ -17,8 +17,8 @@ export function useOneSignal(userId: string | null, tags?: OneSignalTags) {
       const OS = (window as any).OneSignal;
       if (OS && tags) {
         OS.login(userId).then(() => {
-          OS.User.addTag("type",   tags.type);
-          OS.User.addTag("prenom", tags.prenom);
+          OS.User.addTag("role", tags.role);
+          if (tags.pole) OS.User.addTag("pole", tags.pole);
         });
       }
       return;
@@ -47,8 +47,8 @@ export function useOneSignal(userId: string | null, tags?: OneSignalTags) {
         // addTag (singulier) — plus fiable que addTags en v16
         // Ces Data Tags sont filtrables dans les segments OneSignal
         if (tags) {
-          await OS.User.addTag("type",   tags.type);
-          await OS.User.addTag("prenom", tags.prenom);
+          await OS.User.addTag("role", tags.role);
+          if (tags.pole) await OS.User.addTag("pole", tags.pole);
         }
       });
     };

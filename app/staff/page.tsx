@@ -45,10 +45,11 @@ export default function StaffPage() {
   const router = useRouter();
 
   useOneSignal(user?.id ?? null, user ? {
-    type: user.masculin && user.feminin ? "staff_les_deux"
-      : user.masculin ? "staff_masculin"
-      : "staff_feminin",
-    prenom: user.prenom,
+    role: "staff",
+    // pole = pôle suivi par ce membre du staff (null si les deux)
+    pole: user.masculin && user.feminin ? null
+      : user.masculin ? "masculin"
+      : "feminin",
   } : undefined);
 
   useEffect(() => {

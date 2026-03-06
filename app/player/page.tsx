@@ -40,8 +40,8 @@ export default function JoueuseePage() {
   const { checkAndAward } = useBadges();
 
   useOneSignal(user?.id ?? null, user ? {
-    type: user.categorie === "Masculin" ? "joueur_masculin" : "joueur_feminin",
-    prenom: user.prenom,
+    role: "player",
+    pole: user.categorie === "Masculin" ? "masculin" : "feminin",
   } : undefined);
 
   useEffect(() => {
