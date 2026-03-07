@@ -112,15 +112,7 @@ export const BADGES: BadgeDef[] = [
 
   // ── Complet ─────────────────────────────────────────────────────────────────
   {
-    id: "complet_masc",
-    categorie: "complet",
-    nom: "Complet",
-    description: "Toutes les sections de l'app utilisées au moins une fois",
-    emoji: "🎨",
-    cible: "joueur_masculin",
-  },
-  {
-    id: "complet_fem",
+    id: "complet",
     categorie: "complet",
     nom: "Complet",
     description: "Toutes les sections de l'app utilisées au moins une fois",
