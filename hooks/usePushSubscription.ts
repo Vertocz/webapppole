@@ -7,11 +7,17 @@ import { supabase } from "@/lib/supabase";
 type Role = "player" | "staff";
 type Pole = "masculin" | "feminin" | "both";
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+// Retourne un ArrayBuffer (strict) — requis par applicationServerKey
+function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = atob(base64);
-  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  const buffer = new ArrayBuffer(rawData.length);
+  const view = new Uint8Array(buffer);
+  for (let i = 0; i < rawData.length; i++) {
+    view[i] = rawData.charCodeAt(i);
+  }
+  return buffer;
 }
 
 interface UsePushSubscriptionOptions {
@@ -69,7 +75,15 @@ async function registerPush({ userId, role, pole }: { userId: string; role: Role
   };
 
   const { error } = await supabase.from("push_subscriptions").upsert(
-    { user_id: userId, endpoint, p256dh: keys.p256dh, auth: keys.auth, role, pole, user_agent: navigator.userAgent },
+    {
+      user_id:    userId,
+      endpoint,
+      p256dh:     keys.p256dh,
+      auth:       keys.auth,
+      role,
+      pole,
+      user_agent: navigator.userAgent,
+    },
     { onConflict: "endpoint" }
   );
 
