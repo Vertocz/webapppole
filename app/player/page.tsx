@@ -11,13 +11,11 @@ import PreparationMentale from "@/components/PreparationMentale";
 import Tournois from "@/components/Tournois";
 import BadgesTab from "@/components/BadgesTab";
 import BadgePopup from "@/components/BadgePopup";
-import ProfilModal from "@/components/ProfilModal";
 import type { Joueuse } from "@/types";
 import { supabase } from "@/lib/supabase";
 import PwaBanner from "@/components/PwaBanner";
-import NotificationsPermission from "@/components/NotificationsSetup";
+import NotificationsPrompt from "@/components/NotificationsPrompt";
 import { useBadges } from "@/lib/useBadges";
-import { usePushSubscription } from "@/hooks/usePushSubscription";
 
 const ALL_BASE_TABS = [
   { id: "billets",  label: "Billets",          icon: "🎫" },
@@ -36,15 +34,8 @@ export default function JoueuseePage() {
   const [newBadgeIds,   setNewBadgeIds]   = useState<string[]>([]);
   const [badgesChecked, setBadgesChecked] = useState(false);
   const [telephone,     setTelephone]     = useState("");
-  const [profilOpen,    setProfilOpen]    = useState(false);
   const router = useRouter();
   const { checkAndAward } = useBadges();
-
-  usePushSubscription({
-    userId: user?.id ?? null,
-    role: "player",
-    pole: user?.categorie === "Masculin" ? "masculin" : "feminin",
-  });
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
@@ -54,16 +45,13 @@ export default function JoueuseePage() {
     setUser(parsed);
     setTelephone(parsed.numero_tel ?? "");
 
-    // Billets
     supabase.from("billets").select("id").eq("joueuse_id", parsed.id).limit(1)
       .then(({ data }) => setHasBillets((data ?? []).length > 0));
 
-    // Badges déjà acquis ?
     supabase.from("badges_joueur").select("id")
       .eq("joueur_id", parsed.id).eq("joueur_type", "joueur").limit(1)
       .then(({ data }) => { setHasBadges((data ?? []).length > 0); setBadgesChecked(true); });
 
-    // Vérification et attribution des badges
     checkAndAward(parsed.id, "joueur", parsed.categorie, parsed.prenom, parsed.nom, (ids) => {
       setNewBadgeIds(ids);
       setHasBadges(true);
@@ -80,7 +68,6 @@ export default function JoueuseePage() {
 
   const handlePhoneUpdated = (newPhone: string) => {
     setTelephone(newPhone);
-    // Met aussi à jour le sessionStorage pour la session courante
     const stored = sessionStorage.getItem("user");
     if (stored) {
       const parsed = JSON.parse(stored);
@@ -96,11 +83,11 @@ export default function JoueuseePage() {
     </div>
   );
 
-  if (!user)          return <Spinner />;
-  if (!badgesChecked) return <Spinner />;
+  if (!user || !badgesChecked) return <Spinner />;
 
   const isMasculin = user.categorie === "Masculin";
-  const BASE_TABS  = ALL_BASE_TABS.filter(t => t.id !== "billets" || hasBillets);
+  const pole: "masculin" | "feminin" = isMasculin ? "masculin" : "feminin";
+  const BASE_TABS = ALL_BASE_TABS.filter(t => t.id !== "billets" || hasBillets);
   const tabs = [
     ...BASE_TABS,
     ...(isMasculin ? [TAB_MENTALE] : []),
@@ -119,13 +106,13 @@ export default function JoueuseePage() {
         prenom={user.prenom}
         nom={user.nom}
         telephone={telephone}
+        role="player"
+        pole={pole}
         tabs={tabs}
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onPhoneUpdated={handlePhoneUpdated}
         theme="joueur"
-        role="player"
-        pole={user.categorie === "Masculin" ? "masculin" : "feminin"}
       >
         {activeTab === "billets"  && <Billets userId={user.id} />}
         {activeTab === "sportif"  && <SuiviSportif userId={user.id} onSave={handleSave} />}
@@ -136,30 +123,15 @@ export default function JoueuseePage() {
       </Layout>
 
       <PwaBanner />
-      <NotificationsPermission />
+
+      {/* Modal notifications — s'affiche à chaque connexion si pas encore inscrit en base */}
+      <NotificationsPrompt userId={user.id} role="player" pole={pole} />
 
       {newBadgeIds.length > 0 && (
         <BadgePopup
           badgeIds={newBadgeIds}
           onDone={() => setNewBadgeIds([])}
           categorie={user.categorie}
-        />
-      )}
-
-      {profilOpen && (
-        <ProfilModal
-          role="player"
-          pole={user.categorie === "Masculin" ? "masculin" : "feminin"}
-          userId={user.id}
-          userType="joueuse"
-          prenom={user.prenom}
-          nom={user.nom}
-          telephone={telephone}
-          onClose={() => setProfilOpen(false)}
-          onPhoneUpdated={(newPhone) => {
-            handlePhoneUpdated(newPhone);
-            setProfilOpen(false);
-          }}
         />
       )}
     </>
