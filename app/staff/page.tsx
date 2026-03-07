@@ -33,7 +33,7 @@ export default function StaffPage() {
   const [selectedJoueur, setSelectedJoueur] = useState<Joueuse | null>(null);
   const [ongletActif,    setOngletActif]    = useState("sportif");
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
-  const [view,           setView]           = useState<"billets"|"joueurs"|"tournois"|"badges">("joueurs");
+  const [view,           setView]           = useState<"billets"|"joueurs"|"tournois"|"badges"|"notifications">("joueurs");
   const [hasBillets,     setHasBillets]     = useState(false);
   const [hasBadges,      setHasBadges]      = useState(false);
   const [newBadgeIds,    setNewBadgeIds]    = useState<string[]>([]);
@@ -103,6 +103,7 @@ export default function StaffPage() {
     { id: "joueurs",  label: "Suivi joueurs", icon: "📊" },
     { id: "tournois", label: "Tournois",      icon: "🏆" },
     { id: "badges",   label: "Badges",         icon: "🏅" },
+    { id: "notifications",  label: "Notifications",    icon: "🔔" },
   ];
 
   return (
