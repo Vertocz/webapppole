@@ -40,11 +40,11 @@ export default function JoueuseePage() {
   const router = useRouter();
   const { checkAndAward } = useBadges();
 
-usePushSubscription({
-  userId: user?.id ?? null,
-  role: "player",
-  pole: user?.categorie === "Masculin" ? "masculin" : "feminin",
-});
+  usePushSubscription({
+    userId: user?.id ?? null,
+    role: "player",
+    pole: user?.categorie === "Masculin" ? "masculin" : "feminin",
+  });
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
@@ -146,6 +146,8 @@ usePushSubscription({
 
       {profilOpen && (
         <ProfilModal
+          role="player"
+          pole={user.categorie === "Masculin" ? "masculin" : "feminin"}
           userId={user.id}
           userType="joueuse"
           prenom={user.prenom}

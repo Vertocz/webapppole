@@ -19,8 +19,6 @@ import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
 import NotificationsPermission, { useOneSignal } from "@/components/NotificationsSetup";
-import PushNotificationPanel from "@/components/PushNotificationPanel";
-import { usePushSubscription } from "@/hooks/usePushSubscription";
 
 const ONGLETS_JOUEUR = [
   { id: "sportif", label: "Suivi sportif",  icon: "⛹️‍♀️" },
@@ -35,7 +33,7 @@ export default function StaffPage() {
   const [selectedJoueur, setSelectedJoueur] = useState<Joueuse | null>(null);
   const [ongletActif,    setOngletActif]    = useState("sportif");
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
-  const [view,           setView]           = useState<"billets"|"joueurs"|"tournois"|"badges"|"notifications">("joueurs");
+  const [view,           setView]           = useState<"billets"|"joueurs"|"tournois"|"badges">("joueurs");
   const [hasBillets,     setHasBillets]     = useState(false);
   const [hasBadges,      setHasBadges]      = useState(false);
   const [newBadgeIds,    setNewBadgeIds]    = useState<string[]>([]);
@@ -45,12 +43,6 @@ export default function StaffPage() {
   const [exportOpen,     setExportOpen]     = useState(false);
   const { checkAndAward } = useBadges();
   const router = useRouter();
-
-usePushSubscription({
-  userId: user?.id ?? null,
-  role: "staff",
-  pole: user?.masculin && user?.feminin ? "both" : user?.masculin ? "masculin" : "feminin",
-});
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
@@ -111,7 +103,6 @@ usePushSubscription({
     { id: "joueurs",  label: "Suivi joueurs", icon: "📊" },
     { id: "tournois", label: "Tournois",      icon: "🏆" },
     { id: "badges",   label: "Badges",         icon: "🏅" },
-    { id: "notifications",  label: "Notifications",    icon: "🔔" },
   ];
 
   return (
@@ -173,12 +164,12 @@ usePushSubscription({
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-5">
 
           {/* Navigation principale */}
-          <div className="flex rounded-xl p-1 gap-1"
+          <div className="flex rounded-xl p-1 gap-1 overflow-x-auto scrollbar-hide"
             style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
             {viewTabs.map(v => (
               <button key={v.id}
                 onClick={() => setView(v.id as typeof view)}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all"
+                className="flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
                 style={view === v.id
                   ? { background: "linear-gradient(135deg,var(--accent),var(--accent2))",
                       color: "white", boxShadow: "0 2px 12px var(--accent-glow)" }
@@ -192,7 +183,6 @@ usePushSubscription({
           {view === "billets"  && <Billets userId={user.id} />}
           {view === "tournois" && <Tournois />}
           {view === "badges"   && <BadgesTab userId={user.id} userType="staff" />}
-          {view === "notifications" && (<PushNotificationPanel staffId={user.id} pole={user.masculin && user.feminin ? "both" : user.masculin ? "masculin" : "feminin"}/>)}
 
           {/* Suivi joueurs */}
           {view === "joueurs" && (
@@ -297,6 +287,8 @@ usePushSubscription({
 
       {profilOpen && user && (
         <ProfilModal
+          role="staff"
+          pole={user.masculin && user.feminin ? "both" : user.masculin ? "masculin" : "feminin"}
           userId={user.id}
           userType="staff"
           prenom={user.prenom}
