@@ -197,18 +197,6 @@ export default function NotificationsPrompt({ userId, role, pole }: Props) {
                   </div>
                 </div>
 
-                {/* Aperçu */}
-                <div className="rounded-xl p-3 mb-5 flex items-start gap-3"
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                  <div className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center"
-                    style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))" }}>🏀</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold" style={{ color: "var(--text-main)" }}>Pôle France</p>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Tes billets de train pour Toulouse sont disponibles 🎫</p>
-                  </div>
-                  <span className="text-xs shrink-0" style={{ color: "var(--text-muted)" }}>maintenant</span>
-                </div>
-
                 <div className="flex gap-2">
                   <button onClick={handleAccept}
                     className="flex-1 py-3 rounded-xl text-sm font-display tracking-widest transition-all active:scale-95"
