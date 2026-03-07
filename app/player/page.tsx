@@ -124,6 +124,8 @@ export default function JoueuseePage() {
         onTabChange={setActiveTab}
         onPhoneUpdated={handlePhoneUpdated}
         theme="joueur"
+        role="player"
+        pole={user.categorie === "Masculin" ? "masculin" : "feminin"}
       >
         {activeTab === "billets"  && <Billets userId={user.id} />}
         {activeTab === "sportif"  && <SuiviSportif userId={user.id} onSave={handleSave} />}

@@ -13,6 +13,8 @@ interface LayoutProps {
   prenom: string;
   nom: string;
   telephone: string;
+  role: "player" | "staff";               // ← nouveau
+  pole: "masculin" | "feminin" | "both";  // ← nouveau
   tabs: { id: string; label: string; icon: string }[];
   activeTab: string;
   onTabChange: (tab: string) => void;
@@ -20,7 +22,11 @@ interface LayoutProps {
   theme: "joueur" | "staff";
 }
 
-export default function Layout({ children, userName, userId, userType, prenom, nom, telephone, tabs, activeTab, onTabChange, onPhoneUpdated, theme }: LayoutProps) {
+export default function Layout({
+  children, userName, userId, userType, prenom, nom, telephone,
+  role, pole,
+  tabs, activeTab, onTabChange, onPhoneUpdated, theme,
+}: LayoutProps) {
   const router = useRouter();
   const [profilOpen, setProfilOpen] = useState(false);
 
@@ -51,10 +57,7 @@ export default function Layout({ children, userName, userId, userType, prenom, n
               <p className="font-display text-base leading-none" style={{ color: "var(--text-main)" }}>
                 PÔLE FRANCE
               </p>
-              <p
-                className="text-[10px] tracking-widest uppercase font-light"
-                style={{ color: "var(--text-sub)" }}
-              >
+              <p className="text-[10px] tracking-widest uppercase font-light" style={{ color: "var(--text-sub)" }}>
                 Para Basketball Adapté
               </p>
             </div>
@@ -69,15 +72,17 @@ export default function Layout({ children, userName, userId, userType, prenom, n
               <p className="text-xs uppercase tracking-widest font-light" style={{ color: "var(--text-sub)" }}>
                 {theme === "staff" ? "Staff" : "Joueur"}
               </p>
-              <p className="text-sm font-medium underline decoration-dotted underline-offset-2" style={{ color: "var(--text-main)", textDecorationColor: "var(--border)" }}>{userName}</p>
+              <p
+                className="text-sm font-medium underline decoration-dotted underline-offset-2"
+                style={{ color: "var(--text-main)", textDecorationColor: "var(--border)" }}
+              >
+                {userName}
+              </p>
             </button>
             <button
               onClick={() => { sessionStorage.clear(); router.push("/"); }}
               className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-              style={{
-                border: "1px solid var(--border)",
-                color: "var(--text-sub)",
-              }}
+              style={{ border: "1px solid var(--border)", color: "var(--text-sub)" }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-main)")}
               onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-sub)")}
             >
@@ -88,10 +93,7 @@ export default function Layout({ children, userName, userId, userType, prenom, n
       </header>
 
       {/* Tab Nav */}
-      <nav
-        className="px-4"
-        style={{ borderBottom: "1px solid var(--border)" }}
-      >
+      <nav className="px-4" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="max-w-2xl mx-auto flex gap-0 overflow-x-auto scrollbar-hide">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
@@ -127,6 +129,8 @@ export default function Layout({ children, userName, userId, userType, prenom, n
           prenom={prenom}
           nom={nom}
           telephone={telephone}
+          role={role}
+          pole={pole}
           onClose={() => setProfilOpen(false)}
           onPhoneUpdated={(newPhone) => {
             onPhoneUpdated(newPhone);
