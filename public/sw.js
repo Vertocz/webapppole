@@ -1,8 +1,8 @@
-// ─── OneSignal — doit être importé EN PREMIER pour que les push fonctionnent ───
-importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDKWorker.js");
+// public/sw.js
+// ─── ParaBasket PWA — Cache, Offline & Push natif ────────────────────────────
+// OneSignal retiré — push géré nativement via web-push + VAPID
 
-// ─── ParaBasket PWA — Cache & Offline ────────────────────────────────────────
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const CACHE_NAME = `parabasket-${CACHE_VERSION}`;
 
 const STATIC_ASSETS = [
@@ -21,7 +21,6 @@ self.addEventListener("install", (event) => {
     caches
       .open(CACHE_NAME)
       .then((cache) =>
-        // addAll échoue silencieusement sur les assets manquants
         Promise.allSettled(
           STATIC_ASSETS.map((url) =>
             cache.add(url).catch(() => console.warn(`[SW] asset non mis en cache : ${url}`))
@@ -56,26 +55,26 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Ignorer les requêtes non-GET et les extensions Chrome
   if (request.method !== "GET") return;
   if (url.protocol === "chrome-extension:") return;
 
-  // 1. TOUJOURS réseau : Supabase, API internes, OneSignal
+  // 1. Toujours réseau : Supabase + API internes
   if (
     url.hostname.includes("supabase.co") ||
-    url.hostname.includes("onesignal.com") ||
     url.pathname.startsWith("/api/")
   ) {
     event.respondWith(
-      fetch(request).catch(() => new Response(JSON.stringify({ error: "offline" }), {
-        status: 503,
-        headers: { "Content-Type": "application/json" },
-      }))
+      fetch(request).catch(() =>
+        new Response(JSON.stringify({ error: "offline" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
     );
     return;
   }
 
-  // 2. Stale-while-revalidate pour les pages Next.js (_next/static inclus)
+  // 2. Stale-while-revalidate pour les assets Next.js
   if (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/_next/image")
@@ -84,13 +83,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 3. Network-first avec fallback cache pour les pages HTML
+  // 3. Network-first avec fallback offline pour les pages HTML
   if (request.headers.get("accept")?.includes("text/html")) {
     event.respondWith(networkFirstWithOfflineFallback(request));
     return;
   }
 
-  // 4. Cache-first pour tout le reste (assets statiques, images, fonts)
+  // 4. Cache-first pour tout le reste
   event.respondWith(cacheFirst(request));
 });
 
@@ -99,12 +98,10 @@ self.addEventListener("fetch", (event) => {
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(request);
-
   const fetchPromise = fetch(request).then((response) => {
     if (response.ok) cache.put(request, response.clone());
     return response;
   });
-
   return cached || fetchPromise;
 }
 
@@ -117,7 +114,6 @@ async function networkFirstWithOfflineFallback(request) {
   } catch {
     const cached = await cache.match(request);
     if (cached) return cached;
-    // Page offline personnalisée
     const offline = await cache.match("/offline.html");
     return offline || new Response("<h1>Hors ligne</h1>", {
       status: 503,
@@ -130,19 +126,40 @@ async function cacheFirst(request) {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(request);
   if (cached) return cached;
-
   try {
     const response = await fetch(request);
-    if (response.ok && request.method === "GET") {
-      cache.put(request, response.clone());
-    }
+    if (response.ok) cache.put(request, response.clone());
     return response;
   } catch {
     return new Response("Ressource indisponible hors ligne", { status: 503 });
   }
 }
 
-// ─── Clic sur une notification push ──────────────────────────────────────────
+// ─── Réception d'une notification push ───────────────────────────────────────
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+
+  let data;
+  try {
+    data = event.data.json();
+  } catch {
+    data = { title: "ParaBasket", body: event.data.text(), url: "/", icon: "/icon-192.png" };
+  }
+
+  const { title, body, url = "/", icon = "/icon-192.png" } = data;
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon,
+      badge: "/icon-192.png",
+      data: { url },
+      vibrate: [200, 100, 200],
+    })
+  );
+});
+
+// ─── Clic sur une notification ────────────────────────────────────────────────
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
@@ -152,14 +169,12 @@ self.addEventListener("notificationclick", (event) => {
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((clients) => {
-        // Si l'app est déjà ouverte → focus + navigation
         const existing = clients.find((c) => c.url.includes(self.location.origin));
         if (existing) {
           existing.focus();
           existing.navigate(targetUrl);
           return;
         }
-        // Sinon → ouvrir une nouvelle fenêtre
         return self.clients.openWindow(targetUrl);
       })
   );

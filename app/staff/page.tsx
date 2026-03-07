@@ -19,6 +19,8 @@ import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
 import NotificationsPermission, { useOneSignal } from "@/components/NotificationsSetup";
+import PushNotificationPanel from "@/components/PushNotificationPanel";
+import { usePushSubscription } from "@/hooks/usePushSubscription";
 
 const ONGLETS_JOUEUR = [
   { id: "sportif", label: "Suivi sportif",  icon: "⛹️‍♀️" },
@@ -33,7 +35,7 @@ export default function StaffPage() {
   const [selectedJoueur, setSelectedJoueur] = useState<Joueuse | null>(null);
   const [ongletActif,    setOngletActif]    = useState("sportif");
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
-  const [view,           setView]           = useState<"billets"|"joueurs"|"tournois"|"badges">("joueurs");
+  const [view,           setView]           = useState<"billets"|"joueurs"|"tournois"|"badges"|"notifications">("joueurs");
   const [hasBillets,     setHasBillets]     = useState(false);
   const [hasBadges,      setHasBadges]      = useState(false);
   const [newBadgeIds,    setNewBadgeIds]    = useState<string[]>([]);
@@ -44,13 +46,11 @@ export default function StaffPage() {
   const { checkAndAward } = useBadges();
   const router = useRouter();
 
-  useOneSignal(user?.id ?? null, user ? {
-    role: "staff",
-    // pole = pôle suivi par ce membre du staff (null si les deux)
-    pole: user.masculin && user.feminin ? null
-      : user.masculin ? "masculin"
-      : "feminin",
-  } : undefined);
+usePushSubscription({
+  userId: user?.id ?? null,
+  role: "staff",
+  pole: user?.masculin && user?.feminin ? "both" : user?.masculin ? "masculin" : "feminin",
+});
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
@@ -111,6 +111,7 @@ export default function StaffPage() {
     { id: "joueurs",  label: "Suivi joueurs", icon: "📊" },
     { id: "tournois", label: "Tournois",      icon: "🏆" },
     { id: "badges",   label: "Badges",         icon: "🏅" },
+    { id: "notifications",  label: "Notifications",    icon: "🔔" },
   ];
 
   return (
@@ -191,6 +192,7 @@ export default function StaffPage() {
           {view === "billets"  && <Billets userId={user.id} />}
           {view === "tournois" && <Tournois />}
           {view === "badges"   && <BadgesTab userId={user.id} userType="staff" />}
+          {view === "notifications" && (<PushNotificationPanel staffId={user.id} pole={user.masculin && user.feminin ? "both" : user.masculin ? "masculin" : "feminin"}/>)}
 
           {/* Suivi joueurs */}
           {view === "joueurs" && (

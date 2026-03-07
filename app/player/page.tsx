@@ -15,8 +15,9 @@ import ProfilModal from "@/components/ProfilModal";
 import type { Joueuse } from "@/types";
 import { supabase } from "@/lib/supabase";
 import PwaBanner from "@/components/PwaBanner";
-import NotificationsPermission, { useOneSignal } from "@/components/NotificationsSetup";
+import NotificationsPermission from "@/components/NotificationsSetup";
 import { useBadges } from "@/lib/useBadges";
+import { usePushSubscription } from "@/hooks/usePushSubscription";
 
 const ALL_BASE_TABS = [
   { id: "billets",  label: "Billets",          icon: "🎫" },
@@ -39,10 +40,11 @@ export default function JoueuseePage() {
   const router = useRouter();
   const { checkAndAward } = useBadges();
 
-  useOneSignal(user?.id ?? null, user ? {
-    role: "player",
-    pole: user.categorie === "Masculin" ? "masculin" : "feminin",
-  } : undefined);
+usePushSubscription({
+  userId: user?.id ?? null,
+  role: "player",
+  pole: user?.categorie === "Masculin" ? "masculin" : "feminin",
+});
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
