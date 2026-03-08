@@ -5,7 +5,7 @@ import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import {
   getBadgesPourProfil, CATEGORIE_LABELS, CATEGORIE_COLORS,
-  BadgeCategorie, BadgeDef, getBadgeImagePath,
+  BadgeCategorie, getBadgeImagePath, BadgeDef,
 } from "@/lib/badges";
 import Card from "./Card";
 
@@ -102,7 +102,7 @@ export default function BadgesTab({ userId, userType, categorie, readOnly }: Pro
         {/* Modal badge agrandi */}
         {selectedBadge && (
           <BadgeDetailModal
-            badge={selectedBadge!}
+            badge={selectedBadge}
             categorie={categorie}
             onClose={() => setSelectedBadge(null)}
           />
@@ -114,6 +114,13 @@ export default function BadgesTab({ userId, userType, categorie, readOnly }: Pro
   // ── Vue staff : tous les badges avec catégories ───────────────────────────
   return (
     <div className="space-y-5">
+      {selectedBadge && (
+        <BadgeDetailModal
+          badge={selectedBadge}
+          categorie={categorie}
+          onClose={() => setSelectedBadge(null)}
+        />
+      )}
       <Card>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-display text-xl" style={{ color: "var(--text-main)" }}>BADGES</h2>
@@ -146,10 +153,12 @@ export default function BadgesTab({ userId, userType, categorie, readOnly }: Pro
             <div className="grid grid-cols-2 gap-3">
               {badgesCat.map(badge => {
                 const isUnlocked = unlocked.has(badge.id);
+                const Tag = isUnlocked ? "button" : "div";
                 return (
-                  <div
+                  <Tag
                     key={badge.id}
-                    className="rounded-xl p-4 transition-all"
+                    onClick={isUnlocked ? () => setSelectedBadge(badge) : undefined}
+                    className={`rounded-xl p-4 transition-all text-left${isUnlocked ? " active:scale-95 hover:scale-105" : ""}`}
                     style={{
                       background: isUnlocked ? `${color}10` : "#0B1120",
                       border: `1px solid ${isUnlocked ? color + "44" : "rgba(43,80,160,0.1)"}`,
@@ -172,7 +181,7 @@ export default function BadgesTab({ userId, userType, categorie, readOnly }: Pro
                     <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
                       {badge.description}
                     </p>
-                  </div>
+                  </Tag>
                 );
               })}
             </div>
