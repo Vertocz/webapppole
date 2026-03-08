@@ -180,9 +180,6 @@ export function getBadgesPourProfil(
     // Joueur
     if (b.cible === "staff") return false;
     if (b.cible === "joueur_masculin") return categorie === "Masculin";
-    // joueur_tous : distinguer masc/fém pour complet
-    if (b.id === "complet_fem")  return categorie !== "Masculin";
-    if (b.id === "complet_masc") return categorie === "Masculin";
     return true;
   });
 }
