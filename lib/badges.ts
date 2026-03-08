@@ -55,6 +55,14 @@ export const BADGES: BadgeDef[] = [
     emoji: "⚡",
     cible: "joueur_tous",
   },
+    {
+    id: "disette",
+    nom: "Disette",
+    description: "Aucune activité sportive depuis 1 mois. C'est le moment de reprendre !",
+    cible: "joueur_tous",
+    emoji: "🍽️",
+    categorie: "basket",
+  },
 
   // ── Connexion — commun à TOUS (joueurs + staff) ─────────────────────────────
   {
@@ -108,6 +116,14 @@ export const BADGES: BadgeDef[] = [
     description: "Avoir écouté le scan corporel 5 fois",
     emoji: "🌊",
     cible: "joueur_masculin",
+  },
+  {
+    id: "emotions_master",
+    nom: "Maître des émotions",
+    description: "Tu as rempli 12 fiches émotions. Tu te connais vraiment bien.",
+    categorie: "mental",
+    cible: "joueur_masculin",
+    emoji: "🎭",
   },
 
   // ── Complet ─────────────────────────────────────────────────────────────────

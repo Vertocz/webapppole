@@ -105,7 +105,6 @@ export default function StaffPage() {
     ...(hasBillets ? [{ id: "billets",       label: "Mes billets",   icon: "🎫" }] : []),
     { id: "joueurs",       label: "Suivi joueurs",   icon: "📊" },
     { id: "tournois",      label: "Tournois",         icon: "🏆" },
-    { id: "badges",        label: "Badges",           icon: "🏅" },
     { id: "notifications", label: "Notifications",    icon: "🔔" },
   ];
 
@@ -172,7 +171,6 @@ export default function StaffPage() {
 
           {view === "billets"       && <Billets userId={user.id} />}
           {view === "tournois"      && <Tournois />}
-          {view === "badges"        && <BadgesTab userId={user.id} userType="staff" />}
           {view === "notifications" && <PushNotificationPanel staffId={user.id} pole={pole} />}
 
           {view === "joueurs" && (
@@ -253,10 +251,6 @@ export default function StaffPage() {
 
       {/* Modal notifications — s'affiche à chaque connexion si pas encore inscrit en base */}
       <NotificationsPrompt userId={user.id} role="staff" pole={pole} />
-
-      {newBadgeIds.length > 0 && (
-        <BadgePopup badgeIds={newBadgeIds} onDone={() => setNewBadgeIds([])} />
-      )}
 
       {profilOpen && user && (
         <ProfilModal

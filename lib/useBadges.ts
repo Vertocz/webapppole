@@ -81,7 +81,20 @@ async function hasRenfoSemaine(userId: string): Promise<boolean> {
   return (data ?? []).length >= 3;
 }
 
-// ─── Forme (partagé joueurs + staff) ─────────────────────────────────────────
+// ─── Disette : aucune activité sportive depuis 30 jours ──────────────────────
+async function isDisette(userId: string): Promise<boolean> {
+  const ilYa30Jours = new Date();
+  ilYa30Jours.setDate(ilYa30Jours.getDate() - 30);
+  const { data } = await supabase.from("activites").select("date")
+    .eq("joueuse_id", userId)
+    .order("date", { ascending: false })
+    .limit(1);
+  if (!data?.length) return false; // Jamais rien rempli → pas encore de disette
+  const derniere = new Date(data[0].date);
+  return derniere < ilYa30Jours;
+}
+
+// ─── Forme ───────────────────────────────────────────────────────────────────
 async function getSommeilConsecutif(userId: string): Promise<number> {
   const { data } = await supabase.from("suivi_forme").select("date, sommeil")
     .eq("joueuse_id", userId).gte("sommeil", 4)
@@ -104,7 +117,16 @@ async function getZenSemaine(userId: string): Promise<boolean> {
   return data.every(d => d.stress <= 2);
 }
 
-// ─── Prépa mentale (masculin) ────────────────────────────────────────────────
+// ─── Émotions ────────────────────────────────────────────────────────────────
+async function getTotalEmotions(userId: string): Promise<number> {
+  // On compte les dates distinctes (une fiche par jour compte pour 1)
+  const { data } = await supabase.from("suivi_emotions").select("date")
+    .eq("joueur_id", userId);
+  if (!data?.length) return 0;
+  return new Set(data.map(d => d.date)).size;
+}
+
+// ─── Prépa mentale ───────────────────────────────────────────────────────────
 async function getTotalMental(userId: string): Promise<number> {
   const { count } = await supabase.from("suivi_respiration")
     .select("id", { count: "exact", head: true }).eq("joueur_id", userId);
@@ -146,6 +168,9 @@ export function useBadges() {
   ) => {
     await enregistrerConnexion(userId, userType, prenom, nom);
 
+    // Le staff ne reçoit aucun badge
+    if (userType === "staff") return;
+
     const { data: existing } = await supabase.from("badges_joueur").select("badge_id")
       .eq("joueur_id", userId).eq("joueur_type", userType);
     const deja = new Set((existing ?? []).map(b => b.badge_id));
@@ -153,13 +178,11 @@ export function useBadges() {
     const merited = new Set<string>();
     const isMasculin = categorie === "Masculin";
 
-    // ── Badge "presence" — commun à tous ─────────────────────────────────────
+    // ── Connexion ────────────────────────────────────────────────────────────
     const serieConn = await getSerieConnexion(userId, userType);
     if (serieConn >= 7) merited.add("presence");
 
-    // ── Badges forme — communs à tous ────────────────────────────────────────
-    // Note : les staff n'ont pas de suivi_forme → les fonctions renvoient 0/false
-    // ce qui ne déclenche pas le badge. Dès qu'un staff saisit sa forme, ça marche.
+    // ── Forme ────────────────────────────────────────────────────────────────
     const [sommeil, zen] = await Promise.all([
       getSommeilConsecutif(userId),
       getZenSemaine(userId),
@@ -167,19 +190,23 @@ export function useBadges() {
     if (sommeil >= 5) merited.add("recuperation_pro");
     if (zen)          merited.add("zen");
 
-    // ── Badges joueurs uniquement ────────────────────────────────────────────
-    if (userType === "joueur") {
-      const [total, basket, serieDays, renfo] = await Promise.all([
+    // ── Badges joueurs ───────────────────────────────────────────────────────
+    {
+      const [total, basket, serieDays, renfo, emotions, disette] = await Promise.all([
         getTotalActivites(userId),
         getTotalBasket(userId),
         getSerieJoursSportif(userId),
         hasRenfoSemaine(userId),
+        getTotalEmotions(userId),
+        isDisette(userId),
       ]);
 
-      if (basket >= 10)   merited.add("basket_engage");
-      if (renfo)          merited.add("renfo_semaine");
-      if (serieDays >= 3) merited.add("serie_feu");
-      if (total >= 20)    merited.add("machine");
+      if (basket >= 10)    merited.add("basket_engage");
+      if (renfo)           merited.add("renfo_semaine");
+      if (serieDays >= 3)  merited.add("serie_feu");
+      if (total >= 20)     merited.add("machine");
+      if (emotions >= 12)  merited.add("emotions_master");
+      if (disette)         merited.add("disette");
 
       if (isMasculin) {
         const [totalMental, scanCount] = await Promise.all([
