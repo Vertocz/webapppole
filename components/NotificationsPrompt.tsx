@@ -87,17 +87,10 @@ export default function NotificationsPrompt({ userId, role, pole }: Props) {
         .limit(1);
 
       if (data && data.length > 0) {
-        // Déjà en base → rafraîchir last_seen_at silencieusement
-        if ("serviceWorker" in navigator) {
-          const reg = await navigator.serviceWorker.ready;
-          const existing = await reg.pushManager.getSubscription();
-          if (existing) {
-            await supabase
-              .from("push_subscriptions")
-              .update({ last_seen_at: new Date().toISOString() })
-              .eq("endpoint", existing.endpoint);
-          }
-        }
+        // Déjà en base → rien à faire.
+        // ⚠️ On ne touche PAS à notif_seen_at ici :
+        // ce champ est géré exclusivement par NotificationsInbox
+        // après que l'utilisateur a lu ses messages.
         return;
       }
 
@@ -319,7 +312,8 @@ async function saveSubscription(
       user_id: userId, endpoint,
       p256dh: keys.p256dh, auth: keys.auth,
       role, pole, user_agent: navigator.userAgent,
-      last_seen_at: new Date().toISOString(),
+      // notif_seen_at → DEFAULT now() côté DB à la création,
+      // jamais écrasé ici pour ne pas perdre la position de lecture.
     },
     { onConflict: "endpoint" }
   );
