@@ -21,22 +21,14 @@ import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
 
-const ONGLETS_JOUEUR = [
-  { id: "sportif", label: "Suivi sportif",  icon: "⛹️‍♀️" },
-  { id: "forme",   label: "Forme",          icon: "🧘‍♀️" },
-  { id: "mentale", label: "Prépa mentale",  icon: "🧠" },
-  { id: "badges",  label: "Badges",         icon: "🏅" },
-];
-
 export default function StaffPage() {
   const [user,           setUser]           = useState<Staff | null>(null);
   const [joueurs,        setJoueurs]        = useState<Joueuse[]>([]);
   const [selectedJoueur, setSelectedJoueur] = useState<Joueuse | null>(null);
   const [ongletActif,    setOngletActif]    = useState("sportif");
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
-  const [view,           setView]           = useState<"billets"|"joueurs"|"tournois"|"badges"|"notifications">("joueurs");
+  const [view,           setView]           = useState<"billets"|"joueurs"|"tournois"|"notifications">("joueurs");
   const [hasBillets,     setHasBillets]     = useState(false);
-  const [hasBadges,      setHasBadges]      = useState(false);
   const [newBadgeIds,    setNewBadgeIds]    = useState<string[]>([]);
   const [badgesChecked,  setBadgesChecked]  = useState(false);
   const [telephone,      setTelephone]      = useState("");
@@ -44,6 +36,16 @@ export default function StaffPage() {
   const [exportOpen,     setExportOpen]     = useState(false);
   const { checkAndAward } = useBadges();
   const router = useRouter();
+
+  // Onglets dynamiques selon la catégorie du joueur sélectionné
+  const ongletsJoueur = [
+    { id: "sportif", label: "Suivi sportif",  icon: "⛹️‍♀️" },
+    { id: "forme",   label: "Forme",          icon: "🧘‍♀️" },
+    ...(selectedJoueur?.categorie === "Masculin"
+      ? [{ id: "mentale", label: "Prépa mentale", icon: "🧠" }]
+      : []),
+    { id: "badges",  label: "Badges",         icon: "🏅" },
+  ];
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
@@ -53,12 +55,9 @@ export default function StaffPage() {
     setUser(u);
     setTelephone(u.numero_tel ?? "");
 
-    supabase.from("badges_joueur").select("id")
-      .eq("joueur_id", u.id).eq("joueur_type", "staff").limit(1)
-      .then(({ data }) => { setHasBadges((data ?? []).length > 0); setBadgesChecked(true); });
-    checkAndAward(u.id, "staff", undefined, u.prenom, u.nom, (ids) => {
-      setNewBadgeIds(ids); setHasBadges(true);
-    });
+    // Le staff n'a plus de badges — on passe juste badgesChecked à true
+    setBadgesChecked(true);
+    checkAndAward(u.id, "staff", undefined, u.prenom, u.nom, () => {});
 
     supabase.from("billets").select("id").eq("joueuse_id", u.id).limit(1)
       .then(({ data }) => {
@@ -86,6 +85,14 @@ export default function StaffPage() {
       const parsed = JSON.parse(stored);
       parsed.numero_tel = newPhone;
       sessionStorage.setItem("user", JSON.stringify(parsed));
+    }
+  };
+
+  const handleSelectJoueur = (j: Joueuse) => {
+    setSelectedJoueur(j);
+    // Si on était sur "mentale" et qu'on passe sur une joueuse féminine → reset
+    if (ongletActif === "mentale" && j.categorie !== "Masculin") {
+      setOngletActif("sportif");
     }
   };
 
@@ -151,7 +158,6 @@ export default function StaffPage() {
 
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-5">
 
-          {/* Navigation — scroll horizontal sur mobile, réparti sur desktop */}
           <div className="overflow-x-auto scrollbar-hide -mx-4 px-4">
             <div className="flex rounded-xl p-1 gap-1 w-max min-w-full"
               style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
@@ -203,7 +209,7 @@ export default function StaffPage() {
                     {joueurs.map(j => {
                       const isSelected = selectedJoueur?.id === j.id;
                       return (
-                        <button key={j.id} onClick={() => setSelectedJoueur(j)}
+                        <button key={j.id} onClick={() => handleSelectJoueur(j)}
                           className="px-3 py-2 rounded-xl text-sm font-medium transition-all"
                           style={{
                             background: isSelected ? "color-mix(in srgb, var(--accent) 15%, var(--bg-card))" : "var(--bg-input)",
@@ -221,7 +227,7 @@ export default function StaffPage() {
               {selectedJoueur && (
                 <div className="animate-fade-in-up" key={selectedJoueur.id}>
                   <div className="flex overflow-x-auto scrollbar-hide border-b mb-5" style={{ borderColor: "var(--border)" }}>
-                    {ONGLETS_JOUEUR.map(ong => (
+                    {ongletsJoueur.map(ong => (
                       <button key={ong.id} onClick={() => setOngletActif(ong.id)}
                         className="flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap transition-all"
                         style={{
@@ -235,7 +241,7 @@ export default function StaffPage() {
                   </div>
                   {ongletActif === "sportif"  && <SuiviSportif userId={selectedJoueur.id} readOnly />}
                   {ongletActif === "forme"    && <SuiviForme userId={selectedJoueur.id} readOnly />}
-                  {ongletActif === "mentale"  && <PreparationMentale userId={selectedJoueur.id} readOnly />}
+                  {ongletActif === "mentale"  && selectedJoueur.categorie === "Masculin" && <PreparationMentale userId={selectedJoueur.id} readOnly />}
                   {ongletActif === "badges"   && (
                     <BadgesTab userId={selectedJoueur.id} userType="joueur"
                       categorie={selectedJoueur.categorie} readOnly />
@@ -249,8 +255,11 @@ export default function StaffPage() {
 
       <PwaBanner />
 
-      {/* Modal notifications — s'affiche à chaque connexion si pas encore inscrit en base */}
       <NotificationsPrompt userId={user.id} role="staff" pole={pole} />
+
+      {newBadgeIds.length > 0 && (
+        <BadgePopup badgeIds={newBadgeIds} onDone={() => setNewBadgeIds([])} />
+      )}
 
       {profilOpen && user && (
         <ProfilModal
