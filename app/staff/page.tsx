@@ -131,7 +131,7 @@ export default function StaffPage() {
               </div>
               <div>
                 <p className="font-display text-base leading-none" style={{ color: "var(--text-main)" }}>PÔLE FRANCE</p>
-                <p className="text-[10px] tracking-widest uppercase font-light" style={{ color: "var(--text-sub)" }}>Staff</p>
+                <p className="text-[10px] tracking-widest uppercase font-light" style={{ color: "var(--text-sub)" }}>PARA BASKETBALL ADAPTE</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -148,7 +148,7 @@ export default function StaffPage() {
                 <p className="text-xs uppercase tracking-widest font-light" style={{ color: "var(--text-sub)" }}>Staff</p>
                 <p className="text-sm font-medium underline decoration-dotted underline-offset-2"
                   style={{ color: "var(--text-main)", textDecorationColor: "var(--border)" }}>
-                  {user.prenom} {user.nom}
+                  {user.prenom}
                 </p>
               </button>
               <button
