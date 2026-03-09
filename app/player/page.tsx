@@ -15,6 +15,7 @@ import type { Joueuse } from "@/types";
 import { supabase } from "@/lib/supabase";
 import PwaBanner from "@/components/PwaBanner";
 import NotificationsPrompt from "@/components/NotificationsPrompt";
+import NotificationsInbox from "@/components/NotificationsInbox";
 import { useBadges } from "@/lib/useBadges";
 
 const ALL_BASE_TABS = [
@@ -126,6 +127,9 @@ export default function JoueuseePage() {
 
       {/* Modal notifications — s'affiche à chaque connexion si pas encore inscrit en base */}
       <NotificationsPrompt userId={user.id} role="player" pole={pole} />
+
+      {/* Notifs reçues depuis la dernière connexion */}
+      <NotificationsInbox userId={user.id} role="player" pole={pole} />
 
       {newBadgeIds.length > 0 && (
         <BadgePopup
