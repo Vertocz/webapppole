@@ -14,7 +14,6 @@ import BadgesTab from "@/components/BadgesTab";
 import BadgePopup from "@/components/BadgePopup";
 import ProfilModal from "@/components/ProfilModal";
 import ExportPDFModal from "@/components/ExportPDFModal";
-import PushNotificationPanel from "@/components/PushNotificationPanel";
 import NotificationsPrompt from "@/components/NotificationsPrompt";
 import { useBadges } from "@/lib/useBadges";
 import Card from "@/components/Card";
@@ -27,7 +26,7 @@ export default function StaffPage() {
   const [selectedJoueur, setSelectedJoueur] = useState<Joueuse | null>(null);
   const [ongletActif,    setOngletActif]    = useState("sportif");
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
-  const [view,           setView]           = useState<"billets"|"joueurs"|"tournois"|"notifications">("joueurs");
+  const [view, setView] = useState<"billets"|"joueurs"|"tournois">("joueurs");
   const [hasBillets,     setHasBillets]     = useState(false);
   const [newBadgeIds,    setNewBadgeIds]    = useState<string[]>([]);
   const [badgesChecked,  setBadgesChecked]  = useState(false);
@@ -109,10 +108,9 @@ export default function StaffPage() {
   );
 
   const viewTabs = [
-    ...(hasBillets ? [{ id: "billets",       label: "Mes billets",   icon: "🎫" }] : []),
-    { id: "joueurs",       label: "Suivi joueurs",   icon: "📊" },
-    { id: "tournois",      label: "Tournois",         icon: "🏆" },
-    { id: "notifications", label: "Notifications",    icon: "🔔" },
+    ...(hasBillets ? [{ id: "billets",  label: "Mes billets",  icon: "🎫" }] : []),
+    { id: "joueurs",  label: "Suivi joueurs", icon: "📊" },
+    { id: "tournois", label: "Tournois",       icon: "🏆" },
   ];
 
   return (
@@ -137,6 +135,15 @@ export default function StaffPage() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <button onClick={() => router.push("/staff/admin")}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-95"
+                style={{
+                  background: "color-mix(in srgb,var(--accent) 12%,transparent)",
+                  border: "1px solid color-mix(in srgb,var(--accent) 30%,transparent)",
+                  color: "var(--accent)",
+                }}>
+                ⚙️ Admin
+              </button>
               <button onClick={() => setProfilOpen(true)} className="text-right transition-opacity hover:opacity-70">
                 <p className="text-xs uppercase tracking-widest font-light" style={{ color: "var(--text-sub)" }}>Staff</p>
                 <p className="text-sm font-medium underline decoration-dotted underline-offset-2"
@@ -175,9 +182,8 @@ export default function StaffPage() {
             </div>
           </div>
 
-          {view === "billets"       && <Billets userId={user.id} />}
-          {view === "tournois"      && <Tournois />}
-          {view === "notifications" && <PushNotificationPanel staffId={user.id} pole={pole} />}
+          {view === "billets"  && <Billets userId={user.id} />}
+          {view === "tournois" && <Tournois />}
 
           {view === "joueurs" && (
             <div className="space-y-5">
