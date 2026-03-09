@@ -42,34 +42,36 @@ export default function NotificationsInbox({ userId, role, pole }: Props) {
 
   useEffect(() => {
     const load = async () => {
-      // Récupérer le timestamp de dernière vue (localStorage par device)
+      const now = new Date().toISOString();
       const lastSeen = localStorage.getItem(STORAGE_KEY(userId));
 
-      // Construire la requête — notifs pertinentes pour cet utilisateur
-      let query = supabase
+      // Première connexion sur ce device : on marque maintenant et on n'affiche rien
+      // (évite de spammer avec toutes les anciennes notifs)
+      if (!lastSeen) {
+        localStorage.setItem(STORAGE_KEY(userId), now);
+        return;
+      }
+
+      const { data, error } = await supabase
         .from("push_notifications")
         .select("id, title, body, sent_at, target_pole, target_role, target_users")
+        .gt("sent_at", lastSeen)
         .order("sent_at", { ascending: true });
 
-      // Seulement depuis la dernière connexion
-      if (lastSeen) query = query.gt("sent_at", lastSeen);
-
-      const { data } = await query;
-      if (!data?.length) {
-        // Mettre à jour last_seen même si rien à afficher
-        localStorage.setItem(STORAGE_KEY(userId), new Date().toISOString());
+      if (error || !data?.length) {
+        localStorage.setItem(STORAGE_KEY(userId), now);
         return;
       }
 
       // Filtrer côté client : garder les notifs qui concernent cet user
       const relevant = data.filter(n => {
-        // Ciblage individuel : l'user est dans target_users
+        // Ciblage individuel : prioritaire
         if (n.target_users?.length) {
           return n.target_users.includes(userId);
         }
-        // Ciblage par rôle
+        // Ciblage par rôle (valeurs : "player" | "staff" | null)
         if (n.target_role && n.target_role !== role) return false;
-        // Ciblage par pôle
+        // Ciblage par pôle (valeurs : "masculin" | "feminin" | null)
         if (n.target_pole) {
           if (pole === "both") return true;
           return n.target_pole === pole;
@@ -78,7 +80,7 @@ export default function NotificationsInbox({ userId, role, pole }: Props) {
       });
 
       if (!relevant.length) {
-        localStorage.setItem(STORAGE_KEY(userId), new Date().toISOString());
+        localStorage.setItem(STORAGE_KEY(userId), now);
         return;
       }
 
@@ -91,7 +93,6 @@ export default function NotificationsInbox({ userId, role, pole }: Props) {
   }, [userId, role, pole]);
 
   const handleClose = () => {
-    // Mettre à jour last_seen au moment où l'user ferme le modal
     localStorage.setItem(STORAGE_KEY(userId), new Date().toISOString());
     setVisible(false);
   };
