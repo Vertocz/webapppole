@@ -120,7 +120,8 @@ export default function ProfilModal({
             p256dh: (existing.toJSON().keys as { p256dh: string }).p256dh,
             auth:   (existing.toJSON().keys as { auth: string }).auth,
             role, pole, user_agent: navigator.userAgent,
-            last_seen_at: new Date().toISOString() },
+            // notif_seen_at → géré uniquement par NotificationsInbox
+          },
           { onConflict: "endpoint" }
         );
         setNotifStatus("granted");
