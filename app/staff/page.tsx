@@ -15,6 +15,7 @@ import BadgePopup from "@/components/BadgePopup";
 import ProfilModal from "@/components/ProfilModal";
 import ExportPDFModal from "@/components/ExportPDFModal";
 import NotificationsPrompt from "@/components/NotificationsPrompt";
+import NotificationsInbox from "@/components/NotificationsInbox";
 import { useBadges } from "@/lib/useBadges";
 import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
@@ -262,6 +263,9 @@ export default function StaffPage() {
       <PwaBanner />
 
       <NotificationsPrompt userId={user.id} role="staff" pole={pole} />
+
+      {/* Notifs reçues depuis la dernière connexion */}
+      <NotificationsInbox userId={user.id} role="staff" pole={pole} />
 
       {newBadgeIds.length > 0 && (
         <BadgePopup badgeIds={newBadgeIds} onDone={() => setNewBadgeIds([])} />
