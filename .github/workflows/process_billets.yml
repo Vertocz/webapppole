@@ -15,9 +15,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
+          cache-dependency-path: "scripts/requirements.txt"
 
       - name: Installer les dépendances
-        run: pip install pypdf python-dotenv supabase rapidfuzz unidecode
+        run: pip install -r scripts/requirements.txt
 
       - name: Debug clé
         env:
