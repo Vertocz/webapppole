@@ -9,6 +9,7 @@ import unidecode
 from dotenv import load_dotenv
 from pypdf import PdfReader
 from supabase import create_client, Client
+from supabase.lib.client_options import ClientOptions
 from rapidfuzz import fuzz, process as fuzz_process
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
@@ -17,7 +18,14 @@ URL  = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 KEY  = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 BUCKET = "Billets"
 
-supabase: Client = create_client(URL, KEY)
+supabase: Client = create_client(
+    URL,
+    KEY,
+    options=ClientOptions(auto_refresh_token=False, persist_session=False)
+)
+# Force le header Authorization service_role sur toutes les requêtes postgrest
+# → bypass complet du RLS, équivalent au service_role dans le client JS
+supabase.postgrest.auth(KEY)
 
 # ─── Helpers texte ─────────────────────────────────────────────────────────────
 def normalize(text: str) -> str:
@@ -38,17 +46,12 @@ NOISE_WORDS = re.compile(
 def clean_station(raw: str) -> str:
     """Nettoie un nom de gare : retire le bruit, normalise les espaces."""
     s = raw.strip()
-    # Retire tout ce qui suit un mot parasite
     s = NOISE_WORDS.sub('|CUT|', s).split('|CUT|')[0].strip()
     s = re.sub(r'\s+', ' ', s)
     return s.upper() if len(s) >= 3 else ""
 
 
 # ─── Extraction PNR ────────────────────────────────────────────────────────────
-# Formats rencontrés :
-#   OUIGO   → "Votre numéro de réservation est : A634AT"
-#   TGV     → "Dossier voyage : 6MSX9L"
-#   TER     → "REF : 4TYTTS"  ou  "N° DV : 4TYTTS"
 def extract_pnr(text: str) -> str:
     BLACKLIST = {'SAMEDI', 'EUROPE', 'LUNDI', 'MARDI', 'JEUDI', 'VENDREDI', 'FRANCE'}
     patterns = [
@@ -74,11 +77,6 @@ MOIS_FR = {
 }
 
 def extract_date(text: str) -> str:
-    """
-    Extrait la date de TRAJET.
-    Les dates DD/MM/YYYY dans les billets TER sont des dates de naissance,
-    pas des dates de voyage — on les ignore ici.
-    """
     m = re.search(
         r'(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)?\s*'
         r'(\d{1,2})\s+(' + '|'.join(MOIS_FR) + r')\s+(\d{4})',
@@ -91,10 +89,6 @@ def extract_date(text: str) -> str:
 
 
 def extract_birth_date(text: str) -> str | None:
-    """
-    Extrait la date de naissance DD/MM/YYYY des billets TER.
-    Retourne "YYYY-MM-DD" ou None.
-    """
     m = re.search(r'\b(\d{2})/(\d{2})/((?:19|20)\d{2})\b', text)
     if m:
         return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
@@ -105,7 +99,6 @@ def extract_birth_date(text: str) -> str | None:
 def extract_name_candidates(full_text: str) -> list[str]:
     candidates = []
 
-    # TGV INOUI → "Nom : DESOTEUX\nPrénom : Tanguy"
     nom_m = re.search(r'Nom\s*:\s*([A-ZÀ-Ÿa-zà-ÿ\-]+)', full_text)
     pre_m = re.search(r'Prénom\s*:\s*([A-ZÀ-Ÿa-zà-ÿ\-]+)', full_text)
     if nom_m and pre_m:
@@ -113,7 +106,6 @@ def extract_name_candidates(full_text: str) -> list[str]:
         pre = pre_m.group(1).split('Voyageur')[0].strip()
         candidates += [f"{pre} {nom}", f"{nom} {pre}"]
 
-    # OUIGO → "SAFIA HADDADJ - 1977"
     for m in re.finditer(r'^([A-ZÀ-Ÿ][A-ZÀ-Ÿa-zà-ÿ\s\-]+?)\s*-\s*(?:19|20)\d{2}', full_text, re.M):
         parts = m.group(1).strip().split()
         if len(parts) >= 2:
@@ -122,21 +114,14 @@ def extract_name_candidates(full_text: str) -> list[str]:
                 f"{' '.join(parts[1:])} {parts[0]}",
             ]
 
-    # TER → lignes séparées : "CADET\nDONOVAN\n11/03/2000"
     lines = [l.strip() for l in full_text.split('\n') if l.strip()]
     for i, line in enumerate(lines):
-        # TER : la date peut être suivie de " REF : XXXXXX" sur la même ligne
         if re.match(r'^\d{2}/\d{2}/\d{4}\b', line) and i >= 2:
             a, b = lines[i-2], lines[i-1]
-            # Garde seulement si ce sont bien des noms (pas de chiffres)
-            # Autorise les espaces (noms composés ex. "DAVIS GUO") mais rejette les chiffres
             if re.match(r'^[A-ZÀ-Ÿa-zà-ÿ\s\-]+$', a) and re.match(r'^[A-ZÀ-Ÿa-zà-ÿ\s\-]+$', b):
-                # Génère les combinaisons : chaque partie de a avec chaque partie de b
                 parts_a = a.strip().split()
                 parts_b = b.strip().split()
-                # Candidats standards
                 candidates += [f"{a} {b}", f"{b} {a}"]
-                # Si nom composé : aussi première partie seulement (ex. "DAVIS" + "WILLIAM")
                 if len(parts_a) > 1:
                     candidates += [f"{parts_a[0]} {b}", f"{b} {parts_a[0]}"]
                 if len(parts_b) > 1:
@@ -147,15 +132,8 @@ def extract_name_candidates(full_text: str) -> list[str]:
 
 # ─── Extraction des arrêts depuis une page ────────────────────────────────────
 def extract_stops_from_page(page_text: str) -> list[tuple[str, str]]:
-    """
-    Retourne une liste de (heure_HH:MM, nom_gare) dans l'ordre d'apparition.
-    Gère les deux formats :
-      - Inline  : "10h14 LILLE FLANDRES"  (TGV INOUI, OUIGO)
-      - Multiline : "18h15\nLILLE EUROPE"  (TER)
-    """
     stops = []
 
-    # Format inline : heure et gare sur la même ligne
     inline_hits = re.findall(
         r'(\d{1,2}h\d{2})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿa-zà-ÿ\s\-\'1-9]+?)(?=\n|$)',
         page_text
@@ -165,7 +143,6 @@ def extract_stops_from_page(page_text: str) -> list[tuple[str, str]]:
         if station:
             stops.append((raw_time.replace('h', ':'), station))
 
-    # Si aucun stop inline, essaie le format multiline (TER)
     if not stops:
         lines = [l.strip() for l in page_text.split('\n') if l.strip()]
         for i, line in enumerate(lines):
@@ -173,36 +150,26 @@ def extract_stops_from_page(page_text: str) -> list[tuple[str, str]]:
             if m and i + 1 < len(lines):
                 time_str = f"{m.group(1).zfill(2)}:{m.group(2)}"
                 station = clean_station(lines[i + 1])
-                # Sanity : commence par une majuscule, pas un chiffre seul
                 if station and re.match(r'^[A-Z]', station):
                     stops.append((time_str, station))
 
     return stops
 
 
-# ─── Extraction du type et numéro de train entre deux positions ───────────────
+# ─── Extraction du type et numéro de train ────────────────────────────────────
 def extract_train_info(chunk: str) -> tuple[str, str]:
-    """
-    Cherche dans un bloc de texte le type et numéro du train.
-    Retourne (type_train, numero_train).
-    """
-    # TGV INOUI NNNN
     m = re.search(r'TGV\s+INOUI\s+(\d+)', chunk, re.I)
     if m: return "TGV INOUI", m.group(1)
 
-    # INTERCITÉS NNNN
     m = re.search(r'INTERCIT[EÉ]S?\s+(\d+)', chunk, re.I)
     if m: return "INTERCITÉS", m.group(1)
 
-    # OUIGO → "Grande Vitesse train N° 7660"
     m = re.search(r'train\s+N°\s*(\d+)', chunk, re.I)
     if m: return "OUIGO", m.group(1)
 
-    # CAR TER HDF P73 ou CAR TER XXX NNNN
     m = re.search(r'CAR\s+TER\s+\S+\s+(\S+)', chunk, re.I)
     if m: return "CAR TER", m.group(1)
 
-    # TER avec numéro de train seul sur une ligne (4 ou 5 chiffres)
     m = re.search(r'^(\d{4,5})$', chunk, re.M)
     if m: return "TER", m.group(1)
 
@@ -211,18 +178,11 @@ def extract_train_info(chunk: str) -> tuple[str, str]:
 
 # ─── Découpage en segments depuis une page ────────────────────────────────────
 def parse_segments_from_page(page_text: str) -> list[dict]:
-    """
-    Extrait 1 ou N segments depuis le texte d'une page.
-
-    Détecte les connexions TER : quand une gare apparaît consécutivement
-    comme arrivée puis comme départ (ex. CALAIS-FRÉTHUN → CALAIS-FRÉTHUN).
-    """
     stops = extract_stops_from_page(page_text)
     if len(stops) < 2:
         return []
 
     date = extract_date(page_text)
-    lines = page_text.split('\n')
     segments = []
 
     i = 0
@@ -230,8 +190,6 @@ def parse_segments_from_page(page_text: str) -> list[dict]:
         dep_time, dep_station = stops[i]
         arr_time, arr_station = stops[i + 1]
 
-        # Bloc de texte entre les deux gares pour trouver le type de train
-        # On cherche dans le texte global entre les deux occurrences de temps
         dep_pos = page_text.find(dep_time.replace(':', 'h'))
         arr_pos = page_text.find(arr_time.replace(':', 'h'), dep_pos + 1)
         chunk = page_text[dep_pos:arr_pos] if arr_pos > dep_pos else page_text[dep_pos:dep_pos + 200]
@@ -248,12 +206,11 @@ def parse_segments_from_page(page_text: str) -> list[dict]:
             "date_depart":   date,
         })
 
-        # Connexion TER : l'arrivée est identique au prochain départ → sauter
         if (i + 2 < len(stops) and
                 normalize(stops[i + 2][1]) == normalize(arr_station)):
-            i += 2   # le prochain départ est déjà la prochaine gare
+            i += 2
         else:
-            i += 2   # cas standard
+            i += 2
 
     return segments
 
@@ -265,14 +222,6 @@ def find_joueuse(
     joueuses: list[dict],
     staff: list[dict],
 ) -> tuple | None:
-    """
-    Retourne (id, prenom, nom, type) de la meilleure correspondance, ou None.
-
-    Stratégie en deux passes :
-    1. Fuzzy matching sur le nom (seuil 85) — suffit dans la majorité des cas.
-    2. Si plusieurs candidats proches ou nom trop court : départage par date
-       de naissance si elle est présente dans le billet ET dans la base.
-    """
     all_persons = [
         (j['id'], j['prenom'], j['nom'], j.get('date_naissance'), "joueuse")
         for j in joueuses
@@ -284,7 +233,6 @@ def find_joueuse(
     if not all_persons:
         return None
 
-    # Passe 1 : fuzzy sur le nom
     choices = {
         normalize(f"{p[1]} {p[2]}"): p
         for p in all_persons
@@ -300,19 +248,16 @@ def find_joueuse(
     if not scored:
         return None
 
-    # Une seule correspondance nette → retour direct
     if len(scored) == 1:
         _, p = scored[0]
         return p[0], p[1], p[2], p[4]
 
-    # Passe 2 : départage par date de naissance
     if birth_date:
         for score, p in sorted(scored, reverse=True):
-            db_dob = p[3]  # date_naissance stockée en base (format YYYY-MM-DD)
+            db_dob = p[3]
             if db_dob and db_dob == birth_date:
                 return p[0], p[1], p[2], p[4]
 
-    # Fallback : meilleur score fuzzy
     scored.sort(key=lambda x: x[0], reverse=True)
     _, best = scored[0]
     return best[0], best[1], best[2], best[4]
@@ -321,7 +266,6 @@ def find_joueuse(
 # ─── Pipeline principal ────────────────────────────────────────────────────────
 def process_all():
     print("📋 Récupération des joueurs...")
-    # date_naissance peut ne pas exister dans toutes les tables -> fallback sans elle
     try:
         joueuses = supabase.table("joueuses").select("id, prenom, nom, date_naissance").execute().data
     except Exception:
@@ -335,7 +279,6 @@ def process_all():
     print("📂 Scan du bucket...")
     files = supabase.storage.from_(BUCKET).list()
 
-    # Collecte des échecs pour le récap final
     unidentified: list[dict] = []
 
     for f in files:
@@ -352,7 +295,6 @@ def process_all():
             pages    = [page.extract_text() or "" for page in reader.pages]
             full_text = "\n".join(pages)
 
-            # 1. PNR & identité (sur l'ensemble du document)
             pnr        = extract_pnr(full_text)
             candidates = extract_name_candidates(full_text)
             birth_date = extract_birth_date(full_text)
@@ -372,20 +314,16 @@ def process_all():
             new_name = f"{pnr}_{slugify(nom_j)}_{slugify(prenom_j)}.pdf"
             print(f"👤 {person_type.capitalize()} identifié·e : {prenom_j} {nom_j} (id={person_id})")
 
-            # 2. Vérification doublon
             check = supabase.table("billets").select("id").eq("nom_fichier", new_name).execute()
             if check.data:
                 print(f"⏭️  Déjà traité : {new_name}")
                 continue
 
-            # 3. Insertion du billet
-            # joueuse_id accueille les IDs joueuses ET staff (FK supprimée côté Supabase)
-            # personne_type distingue les deux pour les requêtes applicatives
             billet_res = supabase.table("billets").insert({
                 "nom_fichier":    new_name,
                 "url_stockage":   new_name,
                 "joueuse_id":     person_id,
-                "personne_type":  person_type,   # "joueuse" ou "staff"
+                "personne_type":  person_type,
             }).execute()
 
             if not billet_res.data:
@@ -395,9 +333,6 @@ def process_all():
             billet_id = billet_res.data[0]['id']
             print(f"✅ Billet inséré id={billet_id}")
 
-            # 4. Segments — traitement page par page
-            #    Un PDF multi-pages peut avoir un trajet par page (TGV INOUI)
-            #    ou plusieurs segments par page (TER avec correspondance)
             total_segments = 0
             for page_idx, page_text in enumerate(pages):
                 segments = parse_segments_from_page(page_text)
@@ -408,14 +343,14 @@ def process_all():
 
                 for seg in segments:
                     trajet_res = supabase.table("trajets").insert({
-                        "billet_id":    billet_id,
-                        "gare_depart":  seg["gare_depart"],
-                        "gare_arrivee": seg["gare_arrivee"],
-                        "date_depart":  seg["date_depart"],
-                        "heure_depart": seg["heure_depart"],
+                        "billet_id":     billet_id,
+                        "gare_depart":   seg["gare_depart"],
+                        "gare_arrivee":  seg["gare_arrivee"],
+                        "date_depart":   seg["date_depart"],
+                        "heure_depart":  seg["heure_depart"],
                         "heure_arrivee": seg["heure_arrivee"],
-                        "type_train":   seg["type_train"],
-                        "numero_train": seg["numero_train"],
+                        "type_train":    seg["type_train"],
+                        "numero_train":  seg["numero_train"],
                     }).execute()
 
                     if trajet_res.data:
@@ -429,7 +364,6 @@ def process_all():
 
             print(f"   → {total_segments} segment(s) inséré(s)")
 
-            # 5. Renommage dans le bucket Storage
             if name != new_name:
                 supabase.storage.from_(BUCKET).copy(name, new_name)
                 supabase.storage.from_(BUCKET).remove([name])
@@ -439,7 +373,6 @@ def process_all():
             print(f"❌ Erreur critique sur {name} : {e}")
             import traceback; traceback.print_exc()
 
-    # ─── Récapitulatif des échecs ──────────────────────────────────────────────
     print("\n\n══════════════════════════════════════════")
     if not unidentified:
         print("✅ Tous les billets ont été identifiés.")
