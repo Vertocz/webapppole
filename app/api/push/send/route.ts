@@ -82,7 +82,6 @@ export async function POST(req: NextRequest) {
     console.error("[Push] Staff non trouvé:", staffError?.message);
     return NextResponse.json({ error: "Staff non trouvé" }, { status: 403 });
   }
-  console.log("[Push] Staff trouvé:", staffMember);
 
   const senderPole: Pole =
     staffMember.masculin && staffMember.feminin ? "both"
@@ -95,7 +94,6 @@ export async function POST(req: NextRequest) {
       effectivePole = payload.target_pole;
     }
   }
-  console.log("[Push] Pôle effectif:", effectivePole);
 
   // 2. Requête subscriptions
   let query = supabaseAdmin.from("push_subscriptions").select("endpoint, p256dh, auth");
@@ -104,18 +102,28 @@ export async function POST(req: NextRequest) {
   else if (payload.target_role)     query = query.eq("role", payload.target_role);
 
   const { data: subscriptions, error: fetchError } = await query;
-  if (fetchError) {
-    console.error("[Push] Erreur fetch subscriptions:", fetchError.message);
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
-  }
 
-  console.log("[Push] Subscriptions trouvées:", subscriptions?.length ?? 0);
+  // 3. Toujours tracer la notification en base — même sans abonnés push actifs.
+  //    C'est ce qui permet à NotificationsInbox de la retrouver à la connexion suivante.
+  const { data: insertedNotif, error: insertError } = await supabaseAdmin
+    .from("push_notifications")
+    .insert({
+      sent_by:          staff_id,
+      title, body, url, icon,
+      target_pole:      effectivePole !== "both" ? effectivePole : null,
+      target_role:      payload.target_role ?? null,
+      target_users:     payload.target_users ?? null,
+      recipients_count: 0,
+    })
+    .select("id")
+    .single();
 
+  // Pas d'abonnés push → la notif est bien en base, l'inbox la retrouvera
   if (!subscriptions?.length) {
-    return NextResponse.json({ message: "Aucun destinataire", sent: 0, total: 0 });
+    return NextResponse.json({ message: "Notification tracée, aucun abonné push actif", sent: 0, total: 0 });
   }
 
-  // 3. Envoi
+  // 4. Envoi push
   const notifPayload = JSON.stringify({ title, body, url, icon });
   const expiredEndpoints: string[] = [];
 
@@ -126,9 +134,7 @@ export async function POST(req: NextRequest) {
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           notifPayload
         );
-        console.log("[Push] Envoyé à:", sub.endpoint.slice(0, 50) + "...");
       } catch (err: unknown) {
-        console.error("[Push] Erreur envoi:", (err as { statusCode?: number; message?: string }).statusCode, (err as { message?: string }).message);
         if ((err as { statusCode?: number }).statusCode === 410) {
           expiredEndpoints.push(sub.endpoint);
         }
@@ -139,20 +145,17 @@ export async function POST(req: NextRequest) {
 
   if (expiredEndpoints.length) {
     await supabaseAdmin.from("push_subscriptions").delete().in("endpoint", expiredEndpoints);
-    console.log("[Push] Subscriptions expirées supprimées:", expiredEndpoints.length);
   }
 
   const successCount = results.filter((r) => r.status === "fulfilled").length;
-  console.log("[Push] Résultat:", successCount, "/", subscriptions.length);
 
-  await supabaseAdmin.from("push_notifications").insert({
-    sent_by:          staff_id,
-    title, body, url, icon,
-    target_pole:      effectivePole !== "both" ? effectivePole : null,
-    target_role:      payload.target_role ?? null,
-    target_users:     payload.target_users ?? null,
-    recipients_count: successCount,
-  });
+  // Mise à jour du vrai compteur d'envois
+  if (insertedNotif?.id) {
+    await supabaseAdmin
+      .from("push_notifications")
+      .update({ recipients_count: successCount })
+      .eq("id", insertedNotif.id);
+  }
 
   return NextResponse.json({ success: true, sent: successCount, total: subscriptions.length });
 }
