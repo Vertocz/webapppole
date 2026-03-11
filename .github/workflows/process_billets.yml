@@ -19,6 +19,13 @@ jobs:
       - name: Installer les dépendances
         run: pip install pypdf python-dotenv supabase rapidfuzz unidecode
 
+      - name: Debug clé
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "Longueur de la clé: ${#SUPABASE_SERVICE_ROLE_KEY}"
+          echo "Début: ${SUPABASE_SERVICE_ROLE_KEY:0:20}"
+
       - name: Traiter les billets
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
