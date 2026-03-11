@@ -129,10 +129,42 @@ export default function AdminPage() {
 
 // ─── Panel Billets ────────────────────────────────────────────────────────────
 
+const GITHUB_TOKEN = process.env.NEXT_PUBLIC_GITHUB_TOKEN ?? "";
+const GITHUB_REPO  = process.env.NEXT_PUBLIC_GITHUB_REPO ?? "";  // ex: "Vertocz/webapppole"
+
 function BilletsPanel() {
-  const [files,    setFiles]    = useState<UploadedFile[]>([]);
-  const [dragging, setDragging] = useState(false);
+  const [files,         setFiles]         = useState<UploadedFile[]>([]);
+  const [dragging,      setDragging]      = useState(false);
+  const [processing,    setProcessing]    = useState(false);
+  const [processStatus, setProcessStatus] = useState<"idle" | "triggered" | "error">("idle");
   const inputRef = useRef<HTMLInputElement>(null);
+  const pendingUploads = useRef(0);
+
+  const triggerWorkflow = useCallback(async () => {
+    if (!GITHUB_TOKEN || !GITHUB_REPO) return;
+    setProcessing(true);
+    setProcessStatus("idle");
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/process_billets.yml/dispatches`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${GITHUB_TOKEN}`,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ref: "main" }),
+        }
+      );
+      // 204 = déclenché avec succès
+      setProcessStatus(res.status === 204 ? "triggered" : "error");
+    } catch {
+      setProcessStatus("error");
+    } finally {
+      setProcessing(false);
+    }
+  }, []);
 
   const uploadFile = useCallback(async (file: File, index: number) => {
     setFiles(prev => prev.map((f, i) => i === index ? { ...f, status: "uploading" } : f));
@@ -151,13 +183,19 @@ function BilletsPanel() {
         i === index ? { ...f, status: "done" } : f
       ));
     }
-  }, []);
+
+    pendingUploads.current -= 1;
+    if (pendingUploads.current === 0) {
+      triggerWorkflow();
+    }
+  }, [triggerWorkflow]);
 
   const addFiles = useCallback((newFiles: File[]) => {
     const valid = newFiles.filter(f => f.type === "application/pdf" || f.name.endsWith(".pdf"));
     if (!valid.length) return;
 
     const startIndex = files.length;
+    pendingUploads.current += valid.length;
     const entries: UploadedFile[] = valid.map(f => ({
       name: f.name, size: f.size, status: "pending",
     }));
@@ -221,7 +259,45 @@ function BilletsPanel() {
         </div>
       </div>
 
-      {/* Liste des fichiers */}
+      {/* Statut traitement */}
+      {(processing || processStatus !== "idle") && (
+        <div className="rounded-xl px-4 py-3"
+          style={{
+            background: processing
+              ? "rgba(59,130,246,0.08)"
+              : processStatus === "triggered"
+                ? "rgba(74,222,128,0.08)"
+                : "rgba(248,113,113,0.08)",
+            border: `1px solid ${processing
+              ? "rgba(59,130,246,0.2)"
+              : processStatus === "triggered"
+                ? "rgba(74,222,128,0.2)"
+                : "rgba(248,113,113,0.2)"}`,
+          }}>
+          {processing ? (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin shrink-0"
+                style={{ borderColor: "#60a5fa", borderTopColor: "transparent" }} />
+              <p className="text-sm" style={{ color: "#60a5fa" }}>
+                Déclenchement du traitement…
+              </p>
+            </div>
+          ) : processStatus === "triggered" ? (
+            <div>
+              <p className="text-sm font-medium" style={{ color: "#4ade80" }}>
+                ✓ Traitement lancé
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                Le script tourne en arrière-plan (~1 min). Résultat visible dans GitHub Actions.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm" style={{ color: "#f87171" }}>
+              Erreur lors du déclenchement — vérifie le token GitHub.
+            </p>
+          )}
+        </div>
+      )}
       {files.length > 0 && (
         <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
           <div className="px-4 py-2.5 flex items-center justify-between"
