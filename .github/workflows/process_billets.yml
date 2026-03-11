@@ -20,12 +20,15 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r scripts/requirements.txt
 
-      - name: Debug clé
+      - name: Debug variables
         env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          echo "Longueur de la clé: ${#SUPABASE_SERVICE_ROLE_KEY}"
-          echo "Début: ${SUPABASE_SERVICE_ROLE_KEY:0:20}"
+          echo "URL longueur: ${#NEXT_PUBLIC_SUPABASE_URL}"
+          echo "URL début: ${NEXT_PUBLIC_SUPABASE_URL:0:30}"
+          echo "Clé longueur: ${#SUPABASE_SERVICE_ROLE_KEY}"
+          echo "Clé début: ${SUPABASE_SERVICE_ROLE_KEY:0:20}"
 
       - name: Traiter les billets
         env:
