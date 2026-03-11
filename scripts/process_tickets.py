@@ -6,14 +6,12 @@ Gère : billets multi-pages (plusieurs trajets), connexions TER sur une même pa
 
 import os, io, re
 import unidecode
-from dotenv import load_dotenv
 from pypdf import PdfReader
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 from rapidfuzz import fuzz, process as fuzz_process
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
-load_dotenv(dotenv_path=".env.local")
 URL  = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 KEY  = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 BUCKET = "Billets"
