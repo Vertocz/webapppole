@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import { CATEGORIE_LABELS, CATEGORIE_COLORS, BadgeCategorie } from "@/lib/badges";
@@ -390,12 +391,27 @@ function BadgeDetailModal({ badge, categorie, onClose }: {
   const cat             = getCat(badge.id);
   const color           = CATEGORIE_COLORS[cat];
   const { label, icon } = CATEGORIE_LABELS[cat];
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center px-4"
-      style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)" }}
-      onClick={onClose}>
-      <div className="w-full max-w-xs animate-badge-pop" onClick={e => e.stopPropagation()}
+
+  // Portal : rendu direct dans document.body, aucun parent ne peut interférer
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); return () => setMounted(false); }, []);
+  if (!mounted) return null;
+
+  const modal = (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "0 1rem",
+        background: "rgba(0,0,0,0.82)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+      }}>
+      <div onClick={e => e.stopPropagation()}
+        className="animate-badge-pop"
         style={{
+          width: "100%", maxWidth: "20rem",
           background:   "linear-gradient(145deg, #0B1120, #0E1E38)",
           border:       `1px solid ${color}44`,
           borderRadius: "1.5rem",
@@ -430,4 +446,6 @@ function BadgeDetailModal({ badge, categorie, onClose }: {
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
