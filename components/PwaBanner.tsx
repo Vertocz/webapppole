@@ -18,8 +18,7 @@ function detectOS(): OS {
 function isInstalled(): boolean {
   if (typeof window === "undefined") return false;
   if (window.matchMedia("(display-mode: standalone)").matches) return true;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if ((navigator as any).standalone === true) return true;
+  if ("standalone" in navigator && (navigator as any).standalone === true) return true;
   return false;
 }
 

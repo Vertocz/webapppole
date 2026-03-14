@@ -243,8 +243,13 @@ export default function ExportPDFModal({ joueurs, onClose }: { joueurs: Joueuse[
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
-  const toggle    = (id: string) => setSelected(p => { const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n; });
-  const toggleAll = () => setSelected(selected.size===joueurs.length ? new Set() : new Set(joueurs.map(j=>j.id)));
+  const toggle    = (id: string) => setSelected(p => {
+    const n = new Set(p);
+    if (n.has(id)) n.delete(id);
+    else n.add(id);
+    return n;
+  });
+  const toggleAll = () => setSelected(selected.size === joueurs.length ? new Set() : new Set(joueurs.map(j => j.id)));
 
   const runExport = useCallback(async () => {
     if (!selected.size) return;

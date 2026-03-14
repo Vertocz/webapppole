@@ -60,9 +60,7 @@ export function useOneSignal(userId: string | null, tags?: OneSignalTags) {
     };
 
     return () => { if (document.head.contains(script)) document.head.removeChild(script); };
-  // On ne redéclenche pas si tags change (ne change jamais en session)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [userId, tags]);
 }
 
 function isPWA(): boolean {

@@ -21,8 +21,7 @@ export async function POST(req: NextRequest) {
   const body: SendPayload = await req.json();
   const { title, message, playerIds, url } = body;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const payload: Record<string, any> = {
+  const payload: Record<string, unknown> = {
     app_id: ONESIGNAL_APP_ID,
     headings: { fr: title, en: title },
     contents: { fr: message, en: message },

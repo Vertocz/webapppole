@@ -6,6 +6,7 @@ import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import ThemeProvider from "@/components/ThemeProvider";
 import PushNotificationPanel from "@/components/PushNotificationPanel";
+import ManualBadgeAssign from "@/components/ManualBadgeAssign";
 import type { Staff, Joueuse } from "@/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -17,7 +18,7 @@ interface UploadedFile {
   error?: string;
 }
 
-type AdminTab = "billets" | "joueurs" | "notifications";
+type AdminTab = "billets" | "joueurs" | "notifications" | "badges";
 
 interface ConfirmModal {
   title: string;
@@ -62,6 +63,7 @@ export default function AdminPage() {
   const tabs: { id: AdminTab; label: string; icon: string }[] = [
     { id: "billets",       label: "Billets",       icon: "🎫" },
     { id: "joueurs",       label: "Joueurs",        icon: "👥" },
+    { id: "badges",        label: "Badges",         icon: "🏅" },
     { id: "notifications", label: "Notifications",  icon: "🔔" },
   ];
 
@@ -119,6 +121,7 @@ export default function AdminPage() {
 
           {tab === "billets"       && <BilletsPanel />}
           {tab === "joueurs"       && <JoueursPanel user={user} />}
+          {tab === "badges"        && <ManualBadgeAssign staffPhone={user.numero_tel} staffId={user.id} />}
           {tab === "notifications" && <PushNotificationPanel staffId={user.id} pole={pole} />}
 
         </main>
