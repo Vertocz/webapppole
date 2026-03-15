@@ -145,6 +145,8 @@ function ManualBadgeAssignInner() {
   const [submitting,      setSubmitting]       = useState(false);
   const [error,           setError]           = useState("");
   const [alreadyHas,      setAlreadyHas]      = useState<string[]>([]);
+  // badge_id → set des joueur_ids qui l'ont déjà
+  const [ownedMap, setOwnedMap] = useState<Map<string, Set<string>>>(new Map());
 
   // ── État création badge ─────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
@@ -417,7 +419,22 @@ function ManualBadgeAssignInner() {
                 );
               })}
             </div>
-            <button disabled={selectedPlayers.size === 0} onClick={() => setStep("badge")}
+            <button disabled={selectedPlayers.size === 0} onClick={async () => {
+              // Charger les badges déjà obtenus par les joueurs sélectionnés
+              const ids = [...selectedPlayers];
+              const { data } = await supabase
+                .from("badges_joueur")
+                .select("badge_id, joueur_id")
+                .eq("joueur_type", "joueur")
+                .in("joueur_id", ids);
+              const map = new Map<string, Set<string>>();
+              (data ?? []).forEach(({ badge_id, joueur_id }) => {
+                if (!map.has(badge_id)) map.set(badge_id, new Set());
+                map.get(badge_id)!.add(joueur_id);
+              });
+              setOwnedMap(map);
+              setStep("badge");
+            }}
               className="w-full py-3.5 rounded-xl font-display text-sm tracking-widest transition-all"
               style={{
                 background: selectedPlayers.size > 0
@@ -446,9 +463,22 @@ function ManualBadgeAssignInner() {
               <p className="text-sm text-center py-6" style={{ color: "var(--text-muted)" }}>
                 Aucun badge manuel — crée-en un avec le bouton +
               </p>
+            ) : manualBadges.filter(b => {
+                const owners = ownedMap.get(b.id) ?? new Set();
+                return [...selectedPlayers].some(id => !owners.has(id));
+              }).length === 0 ? (
+              <p className="text-sm text-center py-6" style={{ color: "var(--text-muted)" }}>
+                Les joueurs sélectionnés ont déjà tous les badges disponibles.
+              </p>
             ) : (
               <div className="space-y-2">
-                {manualBadges.map(b => (
+                {manualBadges
+                  .filter(b => {
+                    const owners = ownedMap.get(b.id) ?? new Set();
+                    // Afficher seulement si au moins 1 joueur sélectionné n'a pas encore ce badge
+                    return [...selectedPlayers].some(id => !owners.has(id));
+                  })
+                  .map(b => (
                   <button key={b.id} onClick={() => handleBadgeChosen(b)}
                     className="w-full flex items-center gap-4 rounded-xl px-4 py-3 transition-all text-left hover:scale-[1.01] active:scale-[0.99]"
                     style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(43,80,160,0.15)" }}>
