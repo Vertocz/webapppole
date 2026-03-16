@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Card from "./Card";
 
@@ -59,75 +59,8 @@ function trainColor(type: string | null): string {
 }
 
 
-// ─── Widget quai ─────────────────────────────────────────────────────────────
-// S'active uniquement dans les 30 min avant le départ.
-// Vérifie toutes les minutes. Affiche le quai en vert clignotant dès qu'il est connu.
-// Envoie une notification push si le joueur y a consenti.
-function QuaiWidget({ trajet, userId }: { trajet: Trajet; userId: string }) {
-  const [quai,        setQuai]        = useState<string | null>(null);
-  const notifiedRef   = useRef(false);
-  const intervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const isWindow = () => {
-    const dep  = new Date(trajet.date_depart + "T" + trajet.heure_depart);
-    const diff = (dep.getTime() - Date.now()) / 60000; // minutes
-    return diff >= -5 && diff <= 30;
-  };
-
-  const fetchQuai = useCallback(async () => {
-    if (!trajet.numero_train || !isWindow()) return;
-    try {
-      const res  = await fetch(
-        `/api/sncf/quai?gare=${encodeURIComponent(trajet.gare_depart)}&numero=${encodeURIComponent(trajet.numero_train)}&date=${trajet.date_depart}&heure=${trajet.heure_depart}`
-      );
-      const data = await res.json();
-      if (data.quai && data.quai !== quai) {
-        setQuai(data.quai);
-        // Notification push (une seule fois)
-        if (!notifiedRef.current) {
-          notifiedRef.current = true;
-          fetch("/api/sncf/quai-notify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id:      userId,
-              quai:         data.quai,
-              gare_depart:  trajet.gare_depart,
-              numero_train: trajet.numero_train,
-              heure_depart: trajet.heure_depart,
-            }),
-          }).catch(() => {});
-        }
-      }
-    } catch { /* silencieux */ }
-  }, [trajet, userId, quai]);
-
-  useEffect(() => {
-    if (!isWindow()) return;
-    fetchQuai();
-    intervalRef.current = setInterval(fetchQuai, 60 * 1000); // toutes les minutes
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!quai) return null;
-
-  return (
-    <div className="mt-3 pt-3 flex items-center justify-between"
-      style={{ borderTop: "1px solid var(--border)" }}>
-      <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-        🚉 Voie
-      </span>
-      <span className="font-display text-3xl font-bold animate-pulse"
-        style={{ color: "#63C878" }}>
-        {quai}
-      </span>
-    </div>
-  );
-}
-
 // ─── Carte trajet ───────────────────────────────────────────────────────────────
-function TrajetCard({ trajet, urlPdf, userId }: { trajet: Trajet; urlPdf: string; userId: string }) {
+function TrajetCard({ trajet, urlPdf }: { trajet: Trajet; urlPdf: string }) {
   const color = trainColor(trajet.type_train);
   const label = trainLabel(trajet.type_train, trajet.numero_train);
   const isPast = new Date(trajet.date_depart + "T00:00:00") < new Date(new Date().toDateString());
@@ -199,9 +132,6 @@ function TrajetCard({ trajet, urlPdf, userId }: { trajet: Trajet; urlPdf: string
             </p>
           </div>
         </div>
-
-        {/* Quai temps réel */}
-        <QuaiWidget trajet={trajet} userId={userId} />
 
         {/* Bouton PDF */}
         <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
@@ -307,7 +237,7 @@ export default function Billets({ userId }: { userId: string }) {
           </p>
           {aVenir.map(({ trajet, urlPdf }) => (
             <div key={trajet.id} className="animate-fade-in-up">
-              <TrajetCard trajet={trajet} urlPdf={urlPdf} userId={userId} />
+              <TrajetCard trajet={trajet} urlPdf={urlPdf} />
             </div>
           ))}
         </div>
@@ -331,7 +261,7 @@ export default function Billets({ userId }: { userId: string }) {
             <div className="space-y-3 mt-3">
               {passes.map(({ trajet, urlPdf }) => (
                 <div key={trajet.id} className="animate-fade-in-up">
-                  <TrajetCard trajet={trajet} urlPdf={urlPdf} userId={userId} />
+                  <TrajetCard trajet={trajet} urlPdf={urlPdf} />
                 </div>
               ))}
             </div>
