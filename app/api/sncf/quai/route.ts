@@ -49,14 +49,18 @@ export async function GET(req: NextRequest) {
   const departures = data.departures ?? [];
 
   // Trouver le train correspondant au numéro
+  // Normaliser : supprimer espaces et zéros en tête pour comparer "858 273" == "858273"
+  const normalize = (s: string) => s.replace(/\s/g, "").replace(/^0+/, "");
+  const numeroNorm = normalize(numero);
+
   const match = departures.find((d: {
     display_informations?: { headsign?: string; trip_short_name?: string };
     stop_date_time?: { departure_date_time?: string; platform?: string };
   }) => {
-    const headsign = d.display_informations?.headsign ?? "";
-    const tripName = d.display_informations?.trip_short_name ?? "";
-    return headsign === numero || tripName === numero ||
-           headsign.includes(numero) || tripName.includes(numero);
+    const headsign = normalize(d.display_informations?.headsign ?? "");
+    const tripName = normalize(d.display_informations?.trip_short_name ?? "");
+    return headsign === numeroNorm || tripName === numeroNorm ||
+           headsign.includes(numeroNorm) || tripName.includes(numeroNorm);
   });
 
   if (!match)
