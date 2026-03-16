@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
   if (!subs?.length) return NextResponse.json({ sent: 0 });
 
   const payload = JSON.stringify({
-    title: `🚉 Voie ${quai} — ${numero_train}`,
-    body:  `${gare_depart} · Départ ${heure_depart?.slice(0, 5)} → voie ${quai}`,
+    title: `🚉 Voie ${quai}`,
+    body:  `Départ ${heure_depart?.slice(0, 5)} → voie ${quai}`,
     url:   "/player",
     icon:  "/icon-192.png",
   });
