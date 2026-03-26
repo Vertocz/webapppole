@@ -1,0 +1,42 @@
+name: Nettoyage billets anciens
+
+on:
+  # Lancement automatique chaque lundi à 03h00 UTC
+  schedule:
+    - cron: "0 3 * * 1"
+  # Lancement manuel depuis l'onglet Actions (avec option dry-run)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Mode simulation (rien n'est supprimé)"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "scripts/requirements.txt"
+
+      - name: Installer les dépendances
+        run: pip install -r scripts/requirements.txt
+
+      - name: Nettoyer les billets anciens
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # En mode schedule : suppression réelle. En manuel : dry-run par défaut.
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: python scripts/cleanup_old_billets.py
