@@ -3,7 +3,7 @@ name: Nettoyage billets anciens
 on:
   # Lancement automatique chaque lundi à 03h00 UTC
   schedule:
-    - cron: "0 3 * * 1"
+    - cron: "20 16 * * 4"
   # Lancement manuel depuis l'onglet Actions (avec option dry-run)
   workflow_dispatch:
     inputs:
