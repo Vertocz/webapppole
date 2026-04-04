@@ -10,6 +10,7 @@ import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
 import Billets from "@/components/Billets";
 import Tournois from "@/components/Tournois";
+import GaresLogistique from "@/components/GaresLogistique";
 import BadgesTab from "@/components/BadgesTab";
 import BadgePopup from "@/components/BadgePopup";
 import ProfilModal from "@/components/ProfilModal";
@@ -27,7 +28,7 @@ export default function StaffPage() {
   const [selectedJoueur, setSelectedJoueur] = useState<Joueuse | null>(null);
   const [ongletActif,    setOngletActif]    = useState("sportif");
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
-  const [view, setView] = useState<"billets"|"joueurs"|"tournois">("joueurs");
+  const [view, setView] = useState<"billets"|"joueurs"|"tournois"|"gares">("joueurs");
   const [hasBillets,     setHasBillets]     = useState(false);
   const [newBadgeIds,    setNewBadgeIds]    = useState<string[]>([]);
   const [badgesChecked,  setBadgesChecked]  = useState(false);
@@ -108,10 +109,14 @@ export default function StaffPage() {
     </div>
   );
 
+  const AUTHORIZED_PHONE = "0630358954";
+  const isLogisticien = user.numero_tel === AUTHORIZED_PHONE;
+
   const viewTabs = [
     ...(hasBillets ? [{ id: "billets",  label: "Mes billets",  icon: "🎫" }] : []),
     { id: "joueurs",  label: "Suivi joueurs", icon: "📊" },
     { id: "tournois", label: "Tournois",       icon: "🏆" },
+    ...(isLogisticien ? [{ id: "gares", label: "Gares", icon: "🚉" }] : []),
   ];
 
   return (
@@ -185,6 +190,7 @@ export default function StaffPage() {
 
           {view === "billets"  && <Billets userId={user.id} />}
           {view === "tournois" && <Tournois />}
+          {view === "gares"    && <GaresLogistique />}
 
           {view === "joueurs" && (
             <div className="space-y-5">
