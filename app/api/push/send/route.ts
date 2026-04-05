@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 4. Envoi push
-  const notifPayload = JSON.stringify({ title, body, url, icon });
+  const notifPayload = JSON.stringify({ title, body, url, icon, id: insertedNotif?.id });
   const expiredEndpoints: string[] = [];
 
   const results = await Promise.allSettled(

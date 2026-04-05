@@ -17,6 +17,7 @@ import PwaBanner from "@/components/PwaBanner";
 import NotificationsPrompt from "@/components/NotificationsPrompt";
 import NotificationsInbox from "@/components/NotificationsInbox";
 import { useBadges } from "@/lib/useBadges";
+import NotifModal from "@/components/NotifModal";
 
 const ALL_BASE_TABS = [
   { id: "billets",  label: "Billets",          icon: "🎫" },
@@ -35,6 +36,7 @@ export default function JoueuseePage() {
   const [newBadgeIds,   setNewBadgeIds]   = useState<string[]>([]);
   const [badgesChecked, setBadgesChecked] = useState(false);
   const [telephone,     setTelephone]     = useState("");
+  const [notifId,       setNotifId]       = useState<string | null>(null);
   const router = useRouter();
   const { checkAndAward } = useBadges();
 
@@ -57,6 +59,15 @@ export default function JoueuseePage() {
       setNewBadgeIds(ids);
       setHasBadges(true);
     });
+
+    // Détection notif_id dans l'URL (clic depuis une notification push)
+    const params = new URLSearchParams(window.location.search);
+    const nid = params.get("notif_id");
+    if (nid) {
+      setNotifId(nid);
+      // Nettoyer l'URL sans recharger la page
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, [router, checkAndAward]);
 
   const handleSave = useCallback(() => {
@@ -137,6 +148,10 @@ export default function JoueuseePage() {
           onDone={() => setNewBadgeIds([])}
           categorie={user.categorie}
         />
+      )}
+
+      {notifId && (
+        <NotifModal notifId={notifId} onClose={() => setNotifId(null)} />
       )}
     </>
   );

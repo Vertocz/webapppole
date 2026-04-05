@@ -1,6 +1,5 @@
 // public/sw.js
 // ─── ParaBasket PWA — Cache, Offline & Push natif ────────────────────────────
-// OneSignal retiré — push géré nativement via web-push + VAPID
 
 const CACHE_VERSION = "v3";
 const CACHE_NAME = `parabasket-${CACHE_VERSION}`;
@@ -146,14 +145,14 @@ self.addEventListener("push", (event) => {
     data = { title: "ParaBasket", body: event.data.text(), url: "/", icon: "/icon-192.png" };
   }
 
-  const { title, body, url = "/", icon = "/icon-192.png" } = data;
+  const { title, body, url = "/", icon = "/icon-192.png", id } = data;
 
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
       icon,
       badge: "/icon-192.png",
-      data: { url },
+      data: { url, id },   // on stocke l'id dans data
       vibrate: [200, 100, 200],
     })
   );
@@ -163,7 +162,10 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const targetUrl = event.notification.data?.url || "/";
+  const { url = "/", id } = event.notification.data ?? {};
+
+  // Si on a un id, on l'ajoute en query param pour que l'app ouvre la modale
+  const targetUrl = id ? `${url}?notif_id=${id}` : url;
 
   event.waitUntil(
     self.clients

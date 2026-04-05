@@ -21,6 +21,7 @@ import { useBadges } from "@/lib/useBadges";
 import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
+import NotifModal from "@/components/NotifModal";
 
 export default function StaffPage() {
   const [user,           setUser]           = useState<Staff | null>(null);
@@ -35,6 +36,7 @@ export default function StaffPage() {
   const [telephone,      setTelephone]      = useState("");
   const [profilOpen,     setProfilOpen]     = useState(false);
   const [exportOpen,     setExportOpen]     = useState(false);
+  const [notifId,        setNotifId]        = useState<string | null>(null);
   const { checkAndAward } = useBadges();
   const router = useRouter();
 
@@ -59,6 +61,14 @@ export default function StaffPage() {
     // Le staff n'a plus de badges — on passe juste badgesChecked à true
     setBadgesChecked(true);
     checkAndAward(u.id, "staff", undefined, u.prenom, u.nom, () => {});
+
+    // Détection notif_id dans l'URL (clic depuis une notification push)
+    const params = new URLSearchParams(window.location.search);
+    const nid = params.get("notif_id");
+    if (nid) {
+      setNotifId(nid);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
 
     supabase.from("billets").select("id").eq("joueuse_id", u.id).limit(1)
       .then(({ data }) => {
@@ -293,6 +303,10 @@ export default function StaffPage() {
 
       {exportOpen && (
         <ExportPDFModal joueurs={joueurs} onClose={() => setExportOpen(false)} />
+      )}
+
+      {notifId && (
+        <NotifModal notifId={notifId} onClose={() => setNotifId(null)} />
       )}
     </>
   );
