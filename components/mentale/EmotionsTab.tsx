@@ -8,31 +8,41 @@ import SliderField from "../SliderField";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 const EMOTIONS = [
-  { nom: "Calme",      emoji: "😌", couleur: "#FBBF24", imagePath: "calme.png" },
-  { nom: "Concentré",  emoji: "🎯", couleur: "#34D399", imagePath: "concentre.png" },
-  { nom: "Créatif",    emoji: "👨‍🎨", couleur: "#60A5FA", imagePath: "creatif.png" },
-  { nom: "Dégoûté",    emoji: "🤢", couleur: "#F87171", imagePath: "degoute.png" },
-  { nom: "Epuisé",     emoji: "😩", couleur: "#818CF8", imagePath: "epuise.png" },
-  { nom: "Fort",       emoji: "💪", couleur: "#F472B6", imagePath: "fort.png" },
-  { nom: "Frustré",    emoji: "😖", couleur: "#6EE7B7", imagePath: "frustre.png" },
-  { nom: "Inquiet",    emoji: "😰", couleur: "#FCA5A5", imagePath: "inquiet.png" },
-  { nom: "Joyeux",     emoji: "😄", couleur: "#86efac", imagePath: "joyeux.png" },
-  { nom: "Motivé",     emoji: "🏃", couleur: "#FDE68A", imagePath: "motive.png" },
+  { nom: "Calme",       emoji: "😌", couleur: "#FBBF24", imagePath: "calme.png" },
+  { nom: "Concentré",   emoji: "🎯", couleur: "#34D399", imagePath: "concentre.png" },
+  { nom: "Créatif",     emoji: "👨‍🎨", couleur: "#60A5FA", imagePath: "creatif.png" },
+  { nom: "Dégoûté",     emoji: "🤢", couleur: "#F87171", imagePath: "degoute.png" },
+  { nom: "Epuisé",      emoji: "😩", couleur: "#818CF8", imagePath: "epuise.png" },
+  { nom: "Fort",        emoji: "💪", couleur: "#F472B6", imagePath: "fort.png" },
+  { nom: "Frustré",     emoji: "😖", couleur: "#6EE7B7", imagePath: "frustre.png" },
+  { nom: "Inquiet",     emoji: "😰", couleur: "#FCA5A5", imagePath: "inquiet.png" },
+  { nom: "Joyeux",      emoji: "😄", couleur: "#86efac", imagePath: "joyeux.png" },
+  { nom: "Motivé",      emoji: "🏃", couleur: "#FDE68A", imagePath: "motive.png" },
+  { nom: "Fier",        emoji: "🏆", couleur: "#F59E0B", imagePath: "fier.png" },
+  { nom: "Déçu",        emoji: "😞", couleur: "#94A3B8", imagePath: "decu.png" },
+  { nom: "En colère",   emoji: "😤", couleur: "#EF4444", imagePath: "en_colere.png" },
+  { nom: "Jaloux",      emoji: "😒", couleur: "#10B981", imagePath: "jaloux.png" },
+  { nom: "Déterminé",   emoji: "🔥", couleur: "#FB923C", imagePath: "determine.png" },
 ];
 
 const DECLENCHEURS_OPTIONS = [
-  { id: "arbitre",   label: "Décision Arbitrale", img: "arbitre.png" },
-  { id: "erreur",    label: "Une Erreur",          img: "erreur.png" },
-  { id: "trop_plein",label: "Trop plein",          img: "trop_plein.png" },
-  { id: "equipe",    label: "L'équipe",            img: "equipe.png" },
-  { id: "panier",    label: "Un Panier",           img: "panier.png" },
+  { id: "arbitre",     label: "Décision Arbitrale", img: "arbitre.png" },
+  { id: "erreur",      label: "Une Erreur",          img: "erreur.png" },
+  { id: "trop_plein",  label: "Trop plein",          img: "trop_plein.png" },
+  { id: "equipe",      label: "L'équipe",            img: "equipe.png" },
+  { id: "panier",      label: "Un Panier",           img: "panier.png" },
+  { id: "staff",       label: "Staff",               img: "staff.png" },
+  { id: "partenaire",  label: "Un partenaire",       img: "partenaire.png" },
+  { id: "supporter",   label: "Un supporter",        img: "supporter.png" },
+  { id: "blessure",    label: "Une blessure",        img: "blessure.png" },
 ];
 
 const OUTILS_OPTIONS = [
-  { id: "respiration",    label: "Respiration",          img: "respiration.jpg" },
-  { id: "discours",       label: "Discours Intérieur",   img: "discours.png" },
-  { id: "visualisation",  label: "Visualisation",        img: "visualisation.png" },
-  { id: "bulle",          label: "Dans ma bulle",        img: "bulle.png" },
+  { id: "respiration",    label: "Respiration",        img: "respiration.jpg" },
+  { id: "discours",       label: "Discours Intérieur", img: "discours.png" },
+  { id: "visualisation",  label: "Visualisation",      img: "visualisation.png" },
+  { id: "bulle",          label: "Dans ma bulle",      img: "bulle.png" },
+  { id: "cri_de_guerre",  label: "Cri de guerre",      img: "cri_de_guerre.png" },
 ];
 
 const EXPRESSIONS = [
@@ -106,6 +116,16 @@ function IconBtn({ onClick, icon, danger = false, title }: { onClick: () => void
   );
 }
 
+// Placeholder affiché quand l'image est absente
+function EmotionPlaceholder({ emoji, couleur }: { emoji: string; couleur: string }) {
+  return (
+    <div className="w-full h-full flex items-center justify-center text-2xl rounded-lg"
+      style={{ background: `color-mix(in srgb, ${couleur} 15%, var(--bg-card))` }}>
+      {emoji}
+    </div>
+  );
+}
+
 // ─── Composant ────────────────────────────────────────────────────────────────
 export default function EmotionsTab({ userId, readOnly = false }: { userId: string; readOnly?: boolean }) {
   const [historique, setHistorique] = useState<SuiviEmotionFull[]>([]);
@@ -115,6 +135,9 @@ export default function EmotionsTab({ userId, readOnly = false }: { userId: stri
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<SuiviEmotionFull | null>(null);
+
+  // Suivi des images manquantes pour afficher le placeholder emoji
+  const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
 
   const [selectedEmotions, setSelectedEmotions] = useState<Set<string>>(new Set());
   const [entries, setEntries] = useState<Record<string, EmotionEntry>>({});
@@ -151,7 +174,6 @@ export default function EmotionsTab({ userId, readOnly = false }: { userId: stri
     const emotion = EMOTIONS.find((e) => e.nom === item.emotion_nom);
     if (!emotion) return;
 
-    // Reconstituer les déclencheurs sélectionnés depuis le texte sauvegardé
     const savedDeclencheurs = item.declencheur ?? "";
     const matchedDecl = DECLENCHEURS_OPTIONS.filter((o) => savedDeclencheurs.includes(o.label)).map((o) => o.id);
     const unmatchedDecl = DECLENCHEURS_OPTIONS.reduce((acc, o) => acc.replace(o.label, ""), savedDeclencheurs).replace(/,\s*/g, "").trim();
@@ -300,6 +322,7 @@ export default function EmotionsTab({ userId, readOnly = false }: { userId: stri
               <div className="grid grid-cols-5 gap-2">
                 {EMOTIONS.map((em) => {
                   const selected = selectedEmotions.has(em.nom);
+                  const hasImgError = imgErrors.has(em.nom);
                   return (
                     <button key={em.nom} type="button" onClick={() => toggleEmotion(em.nom)}
                       className="flex flex-col items-center gap-1.5 p-1.5 rounded-xl transition-all duration-200"
@@ -311,9 +334,13 @@ export default function EmotionsTab({ userId, readOnly = false }: { userId: stri
                       }}>
                       <div className="w-full aspect-square rounded-lg overflow-hidden"
                         style={{ background: `color-mix(in srgb, ${em.couleur} 10%, var(--bg-card))` }}>
-                        <img src={`/emotions/${em.imagePath}`} alt={em.nom}
-                          className="w-full h-full object-cover rounded-lg"
-                          onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                        {hasImgError ? (
+                          <EmotionPlaceholder emoji={em.emoji} couleur={em.couleur} />
+                        ) : (
+                          <img src={`/emotions/${em.imagePath}`} alt={em.nom}
+                            className="w-full h-full object-cover rounded-lg"
+                            onError={() => setImgErrors((prev) => new Set(prev).add(em.nom))} />
+                        )}
                       </div>
                       <span className="text-[10px] font-bold text-center uppercase leading-tight"
                         style={{ color: selected ? em.couleur : "var(--text-muted)" }}>
@@ -353,6 +380,7 @@ export default function EmotionsTab({ userId, readOnly = false }: { userId: stri
             {activeEmotion && entries[activeEmotion] && (() => {
               const em = EMOTIONS.find((e) => e.nom === activeEmotion)!;
               const entry = entries[activeEmotion];
+              const hasImgError = imgErrors.has(activeEmotion);
               return (
                 <div className="rounded-2xl p-4 space-y-6 animate-slide-in"
                   style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
@@ -361,9 +389,13 @@ export default function EmotionsTab({ userId, readOnly = false }: { userId: stri
                   <div className="flex items-center gap-3 pb-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                     <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0"
                       style={{ background: `color-mix(in srgb, ${em.couleur} 15%, var(--bg-card))` }}>
-                      <img src={`/emotions/${em.imagePath}`} alt={activeEmotion}
-                        className="w-full h-full object-cover"
-                        onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                      {hasImgError ? (
+                        <EmotionPlaceholder emoji={em.emoji} couleur={em.couleur} />
+                      ) : (
+                        <img src={`/emotions/${em.imagePath}`} alt={activeEmotion}
+                          className="w-full h-full object-cover"
+                          onError={() => setImgErrors((prev) => new Set(prev).add(activeEmotion))} />
+                      )}
                     </div>
                     <span className="font-display text-xl uppercase tracking-wider" style={{ color: em.couleur }}>
                       {activeEmotion}
@@ -562,7 +594,6 @@ export default function EmotionsTab({ userId, readOnly = false }: { userId: stri
                         <div style={editingItem?.id === item.id ? { outline: "2px solid var(--accent)", outlineOffset: "3px", borderRadius: "8px" } : {}}>
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1">
-                              {/* En-tête */}
                               <div className="flex items-center gap-2 mb-2">
                                 <span className="text-base">{em?.emoji ?? "💭"}</span>
                                 <span className="font-medium text-sm" style={{ color: em?.couleur ?? "var(--accent)" }}>
@@ -575,13 +606,11 @@ export default function EmotionsTab({ userId, readOnly = false }: { userId: stri
                                 {expression && <span title="Expression">{expression.icon}</span>}
                                 {pensees && <span title={`Pensées : ${pensees.label}`}>{pensees.icon}</span>}
                               </div>
-                              {/* Déclencheur */}
                               {item.declencheur && (
                                 <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
                                   <span style={{ color: "var(--text-sub)" }}>Déclencheur :</span> {item.declencheur}
                                 </p>
                               )}
-                              {/* Outils */}
                               {item.ressources && (
                                 <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
                                   <span style={{ color: "var(--text-sub)" }}>Outils :</span> {item.ressources}

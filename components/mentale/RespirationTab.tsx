@@ -59,16 +59,16 @@ const CATEGORIES = [
       {
         id: "scan-1",
         titre: "Scan corporel 1",
-        description: "Parcours du corps de la tête aux pieds, identification et relâchement des zones de tension.",
+        description: "Respiration relaxante et scan corporel des mains.",
         instruction: "",
         audios: [{ label: "▶ Écouter", path: "scan.m4a" }],
       },
       {
         id: "scan-2",
         titre: "Scan corporel 2",
-        description: "A venir !",
+        description: "Scan corporel des bras pour mieux se connaître.",
         instruction: "",
-        audios: [{ label: "▶ Écouter", path: "scan-corporel-2.mp3" }],
+        audios: [{ label: "▶ Écouter", path: "scan2.m4a" }],
       },
     ],
   },
@@ -133,6 +133,7 @@ export default function RespirationTab({ userId, readOnly = false, onSave }: { u
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<RespiExt | null>(null);
 
@@ -201,23 +202,44 @@ export default function RespirationTab({ userId, readOnly = false, onSave }: { u
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setSaving(true);
-    const payload = {
-      date: dateS,
-      contexte: categorieActive,
-      exercice: exerciceChoisi,
-      commentaire,
-      temps: tempsChoisi || null,
-      moment: momentChoisi || null,
-      posture: postureChoisie || null,
-    };
-    if (editingItem) {
-      await supabase.from("suivi_respiration").update(payload).eq("id", editingItem.id);
-    } else {
-      await supabase.from("suivi_respiration").insert({ joueur_id: userId, ...payload });
+    e.preventDefault();
+    if (!exerciceChoisi) {
+      setSaveError("Veuillez sélectionner un exercice.");
+      return;
     }
-    setSaved(true); setTimeout(() => setSaved(false), 3000); onSave?.();
-    resetForm(); await load(); setSaving(false);
+    setSaving(true);
+    setSaveError(null);
+
+    try {
+      const payload = {
+        date: dateS,
+        contexte: categorieActive,
+        exercice: exerciceChoisi,
+        commentaire,
+        temps: tempsChoisi || null,
+        moment: momentChoisi || null,
+        posture: postureChoisie || null,
+      };
+
+      if (editingItem) {
+        const { error } = await supabase.from("suivi_respiration").update(payload).eq("id", editingItem.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("suivi_respiration").insert({ joueur_id: userId, ...payload });
+        if (error) throw error;
+      }
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+      onSave?.();
+      resetForm();
+      await load();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : (err as { message?: string })?.message ?? "Erreur inconnue";
+      setSaveError(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -417,12 +439,22 @@ export default function RespirationTab({ userId, readOnly = false, onSave }: { u
                 placeholder="Ressenti après l'exercice, observations..."
                 className="w-full px-4 py-3 rounded-xl outline-none resize-none" style={inputStyle} />
             </div>
+
+            {/* Message de succès */}
             {saved && (
               <div className="rounded-lg px-4 py-3 text-sm animate-slide-in" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", color: "#86efac" }}>
                 {editingItem ? "✅ Séance modifiée !" : "✅ Séance enregistrée !"}
               </div>
             )}
-            <button type="submit" disabled={saving}
+
+            {/* Message d'erreur */}
+            {saveError && (
+              <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171" }}>
+                ❌ Erreur : {saveError}
+              </div>
+            )}
+
+            <button type="submit" disabled={saving || !exerciceChoisi}
               className="w-full py-3.5 rounded-xl font-display text-lg tracking-widest transition-all disabled:opacity-40"
               style={{ background: "linear-gradient(135deg, var(--accent), var(--accent2))", color: "white", boxShadow: "0 4px 20px var(--accent-glow)" }}>
               {saving ? "Enregistrement..." : editingItem ? "MODIFIER" : "ENREGISTRER"}
