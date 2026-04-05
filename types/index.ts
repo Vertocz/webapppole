@@ -63,7 +63,11 @@ export interface SuiviRespiration {
   id: string;
   joueur_id: string;
   date: string;
-  contexte: "quotidien" | "basket";
+  contexte: "activation" | "relaxation" | "scan";
+  exercice: string;
   commentaire: string;
+  temps?: string;
+  moment?: string;
+  posture?: string;
   created_at: string;
 }
