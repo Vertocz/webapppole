@@ -1,7 +1,7 @@
 // public/sw.js
 // ─── ParaBasket PWA — Cache, Offline & Push natif ────────────────────────────
 
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const CACHE_NAME = `parabasket-${CACHE_VERSION}`;
 
 const STATIC_ASSETS = [
