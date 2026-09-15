@@ -11,6 +11,7 @@ import PreparationMentale from "@/components/PreparationMentale";
 import Tournois from "@/components/Tournois";
 import BadgesTab from "@/components/BadgesTab";
 import BadgePopup from "@/components/BadgePopup";
+import GamesTab from "@/components/games/GamesTab";
 import type { Joueuse } from "@/types";
 import { supabase } from "@/lib/supabase";
 import PwaBanner from "@/components/PwaBanner";
@@ -20,40 +21,55 @@ import { useBadges } from "@/lib/useBadges";
 import NotifModal from "@/components/NotifModal";
 
 const ALL_BASE_TABS = [
-  { id: "billets",  label: "Billets",          icon: "🎫" },
-  { id: "sportif",  label: "Suivi sportif",     icon: "⛹️‍♀️" },
-  { id: "forme",    label: "Forme quotidienne", icon: "🧘‍♀️" },
+  { id: "billets", label: "Billets", icon: "🎫" },
+  { id: "sportif", label: "Suivi sportif", icon: "⛹️‍♀️" },
+  { id: "forme", label: "Forme quotidienne", icon: "🧘‍♀️" },
 ];
-const TAB_MENTALE  = { id: "mentale",  label: "Prépa mentale", icon: "🧠" };
-const TAB_TOURNOIS = { id: "tournois", label: "Tournois",      icon: "🏆" };
-const TAB_BADGES   = { id: "badges",   label: "Badges",        icon: "🏅" };
+const TAB_MENTALE = { id: "mentale", label: "Prépa mentale", icon: "🧠" };
+const TAB_TOURNOIS = { id: "tournois", label: "Tournois", icon: "🏆" };
+const TAB_BADGES = { id: "badges", label: "Badges", icon: "🏅" };
+const TAB_JEUX = { id: "jeux", label: "Jeux", icon: "🎮" };
 
 export default function JoueuseePage() {
-  const [user,          setUser]          = useState<Joueuse | null>(null);
-  const [activeTab,     setActiveTab]     = useState("sportif");
-  const [hasBillets,    setHasBillets]    = useState(false);
-  const [hasBadges,     setHasBadges]     = useState(false);
-  const [newBadgeIds,   setNewBadgeIds]   = useState<string[]>([]);
+  const [user, setUser] = useState<Joueuse | null>(null);
+  const [activeTab, setActiveTab] = useState("sportif");
+  const [hasBillets, setHasBillets] = useState(false);
+  const [hasBadges, setHasBadges] = useState(false);
+  const [newBadgeIds, setNewBadgeIds] = useState<string[]>([]);
   const [badgesChecked, setBadgesChecked] = useState(false);
-  const [telephone,     setTelephone]     = useState("");
-  const [notifId,       setNotifId]       = useState<string | null>(null);
+  const [telephone, setTelephone] = useState("");
+  const [notifId, setNotifId] = useState<string | null>(null);
   const router = useRouter();
   const { checkAndAward } = useBadges();
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
-    const type   = sessionStorage.getItem("type_user");
-    if (!stored || type !== "joueuse") { router.push("/"); return; }
+    const type = sessionStorage.getItem("type_user");
+    if (!stored || type !== "joueuse") {
+      router.push("/");
+      return;
+    }
     const parsed = JSON.parse(stored) as Joueuse;
     setUser(parsed);
     setTelephone(parsed.numero_tel ?? "");
 
-    supabase.from("billets").select("id").eq("joueuse_id", parsed.id).limit(1)
+    supabase
+      .from("billets")
+      .select("id")
+      .eq("joueuse_id", parsed.id)
+      .limit(1)
       .then(({ data }) => setHasBillets((data ?? []).length > 0));
 
-    supabase.from("badges_joueur").select("id")
-      .eq("joueur_id", parsed.id).eq("joueur_type", "joueur").limit(1)
-      .then(({ data }) => { setHasBadges((data ?? []).length > 0); setBadgesChecked(true); });
+    supabase
+      .from("badges_joueur")
+      .select("id")
+      .eq("joueur_id", parsed.id)
+      .eq("joueur_type", "joueur")
+      .limit(1)
+      .then(({ data }) => {
+        setHasBadges((data ?? []).length > 0);
+        setBadgesChecked(true);
+      });
 
     checkAndAward(parsed.id, "joueur", parsed.categorie, parsed.prenom, parsed.nom, (ids) => {
       setNewBadgeIds(ids);
@@ -90,8 +106,10 @@ export default function JoueuseePage() {
 
   const Spinner = () => (
     <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)" }}>
-      <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
-        style={{ borderColor: "var(--spinner)", borderTopColor: "transparent" }} />
+      <div
+        className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
+        style={{ borderColor: "var(--spinner)", borderTopColor: "transparent" }}
+      />
     </div>
   );
 
@@ -99,11 +117,12 @@ export default function JoueuseePage() {
 
   const isMasculin = user.categorie === "Masculin";
   const pole: "masculin" | "feminin" = isMasculin ? "masculin" : "feminin";
-  const BASE_TABS = ALL_BASE_TABS.filter(t => t.id !== "billets" || hasBillets);
+  const BASE_TABS = ALL_BASE_TABS.filter((t) => t.id !== "billets" || hasBillets);
   const tabs = [
     ...BASE_TABS,
     ...(isMasculin ? [TAB_MENTALE] : []),
     TAB_TOURNOIS,
+    ...(user.acces_jeux ? [TAB_JEUX] : []),
     ...(hasBadges ? [TAB_BADGES] : []),
   ];
 
@@ -126,12 +145,13 @@ export default function JoueuseePage() {
         onPhoneUpdated={handlePhoneUpdated}
         theme="joueur"
       >
-        {activeTab === "billets"  && <Billets userId={user.id} />}
-        {activeTab === "sportif"  && <SuiviSportif userId={user.id} onSave={handleSave} />}
-        {activeTab === "forme"    && <SuiviForme userId={user.id} onSave={handleSave} />}
-        {activeTab === "mentale"  && isMasculin && <PreparationMentale userId={user.id} onSave={handleSave} />}
+        {activeTab === "billets" && <Billets userId={user.id} />}
+        {activeTab === "sportif" && <SuiviSportif userId={user.id} onSave={handleSave} />}
+        {activeTab === "forme" && <SuiviForme userId={user.id} onSave={handleSave} />}
+        {activeTab === "mentale" && isMasculin && <PreparationMentale userId={user.id} onSave={handleSave} />}
         {activeTab === "tournois" && <Tournois />}
-        {activeTab === "badges"   && <BadgesTab userId={user.id} userType="joueur" categorie={user.categorie} />}
+        {activeTab === "jeux" && user.acces_jeux && <GamesTab />}
+        {activeTab === "badges" && <BadgesTab userId={user.id} userType="joueur" categorie={user.categorie} />}
       </Layout>
 
       <PwaBanner />
@@ -143,16 +163,10 @@ export default function JoueuseePage() {
       <NotificationsInbox userId={user.id} role="player" pole={pole} />
 
       {newBadgeIds.length > 0 && (
-        <BadgePopup
-          badgeIds={newBadgeIds}
-          onDone={() => setNewBadgeIds([])}
-          categorie={user.categorie}
-        />
+        <BadgePopup badgeIds={newBadgeIds} onDone={() => setNewBadgeIds([])} categorie={user.categorie} />
       )}
 
-      {notifId && (
-        <NotifModal notifId={notifId} onClose={() => setNotifId(null)} />
-      )}
+      {notifId && <NotifModal notifId={notifId} onClose={() => setNotifId(null)} />}
     </>
   );
 }

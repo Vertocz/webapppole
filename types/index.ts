@@ -6,6 +6,8 @@ export interface Joueuse {
   nom: string;
   numero_tel: string;
   categorie?: string;
+  /** Accès à la section Jeux. Par défaut : true pour le pôle Masculin, false sinon. Gérable individuellement depuis l'admin. */
+  acces_jeux?: boolean;
 }
 
 export interface Staff {
