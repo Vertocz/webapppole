@@ -6,13 +6,13 @@ import type { NetMessage } from "@/lib/p2pRoom";
 
 // ─── Réglages du geste (à recalibrer après tests sur téléphone réel) ──────────
 const IDEAL_SWIPE_SPEED = 2.0; // hauteurs de zone de tir / seconde
-const SWIPE_SPEED_TOLERANCE = 1.6;
+const SWIPE_SPEED_TOLERANCE = 2.2;
 const IDEAL_ANGLE_DEG = 0; // 0° = tracé parfaitement vertical
-const ANGLE_TOLERANCE_DEG = 45;
+const ANGLE_TOLERANCE_DEG = 60;
 const IDEAL_MOTION_MAG = 14; // m/s² d'accélération linéaire au pic
 const MOTION_MAG_TOLERANCE = 10;
 
-const OUTCOME_THRESHOLDS = { swish: 0.82, made: 0.6, rimout: 0.4 };
+const OUTCOME_THRESHOLDS = { swish: 0.8, made: 0.5, rimout: 0.28 };
 
 type Outcome = "swish" | "made" | "rimout" | "miss";
 
@@ -54,6 +54,11 @@ async function requestMotionPermission(): Promise<boolean> {
 // ─── Rendu Canvas du tir ──────────────────────────────────────────────────────
 function ShotCanvas({ shot, onDone }: { shot: ShotResult | null; onDone: (o: Outcome) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // La ref évite de remettre l'effet d'animation en dépendance de onDone,
+  // qui change d'identité à chaque rendu du parent (setState des stats) —
+  // sans ça, l'animation du même tir se relançait indéfiniment en boucle.
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   const draw = useCallback((t: number, current: ShotResult) => {
     const canvas = canvasRef.current;
@@ -68,7 +73,7 @@ function ShotCanvas({ shot, onDone }: { shot: ShotResult | null; onDone: (o: Out
 
     // Panneau + arceau
     const rimX = W * 0.5;
-    const rimY = H * 0.2;
+    const rimY = H * 0.22;
     ctx.strokeStyle = "#E8EEF8";
     ctx.lineWidth = 4;
     ctx.strokeRect(rimX - 55, rimY - 45, 110, 45);
@@ -78,14 +83,30 @@ function ShotCanvas({ shot, onDone }: { shot: ShotResult | null; onDone: (o: Out
     ctx.ellipse(rimX, rimY, 34, 8, 0, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Trajectoire
-    const start = { x: W * 0.5, y: H * 0.9 };
-    const missed = current.outcome === "miss" || current.outcome === "rimout";
-    const endX = rimX + current.missDx * 70;
-    const short = current.outcome === "miss" && current.power < 0.4;
-    const endY = short ? rimY + 60 : rimY;
-    const arcHeight = 60 + current.power * 90;
-    const ctrl = { x: (start.x + endX) / 2, y: Math.min(start.y, endY) - arcHeight };
+    // Point d'arrivée : différent selon le résultat, pour donner une vraie
+    // sensation de profondeur (dans le filet / trop court / trop long).
+    const start = { x: W * 0.5, y: H * 0.88 };
+    const missDxPx = current.missDx === 0 ? 1 : current.missDx;
+    let endX = rimX;
+    let endY = rimY;
+
+    if (current.outcome === "swish" || current.outcome === "made") {
+      endX = rimX + current.missDx * 12;
+      endY = rimY + 18; // la balle descend sous l'arceau, dans le filet
+    } else if (current.outcome === "rimout") {
+      endX = rimX + missDxPx * 55;
+      endY = rimY - 6; // touche l'arceau, ne rentre pas
+    } else if (current.power < 0.4) {
+      endX = rimX + current.missDx * 40;
+      endY = rimY + (start.y - rimY) * 0.45; // trop court : retombe avant
+    } else {
+      endX = rimX + missDxPx * 90;
+      endY = rimY - 35; // trop fort : passe au-dessus / à côté
+    }
+
+    const travel = start.y - endY;
+    const arcHeight = Math.max(30, travel * (0.3 + current.power * 0.2));
+    const ctrl = { x: (start.x + endX) / 2, y: Math.max(8, Math.min(start.y, endY) - arcHeight) };
 
     const tt = Math.min(1, t);
     const bx = (1 - tt) * (1 - tt) * start.x + 2 * (1 - tt) * tt * ctrl.x + tt * tt * endX;
@@ -100,6 +121,7 @@ function ShotCanvas({ shot, onDone }: { shot: ShotResult | null; onDone: (o: Out
     ctx.stroke();
 
     if (tt >= 1) {
+      const missed = current.outcome === "miss" || current.outcome === "rimout";
       ctx.fillStyle = missed ? "#f87171" : "#4ade80";
       ctx.font = "bold 22px sans-serif";
       ctx.textAlign = "center";
@@ -125,12 +147,12 @@ function ShotCanvas({ shot, onDone }: { shot: ShotResult | null; onDone: (o: Out
       if (t < 1) {
         raf = requestAnimationFrame(frame);
       } else {
-        onDone(shot!.outcome);
+        onDoneRef.current(shot!.outcome);
       }
     }
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [shot, draw, onDone]);
+  }, [shot, draw]);
 
   return (
     <canvas

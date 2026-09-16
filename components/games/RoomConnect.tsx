@@ -67,6 +67,7 @@ export default function RoomConnect({
 
   const soloMode = () => {
     setMode(null);
+    setMyId("solo");
     setPlayers([{ id: "solo", name: "Moi" }]);
     setReady(true);
   };

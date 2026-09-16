@@ -464,6 +464,48 @@ function BombermanGame({ ctx }: { ctx: RoomContext }) {
     else ctx.send({ type: "move", payload: { bomb: true }, from: ctx.myId });
   }, [ctx, isHost]);
 
+  // Clavier (pratique pour tester sur ordinateur sans écran tactile)
+  useEffect(() => {
+    const keyToDir: Record<string, Dir> = {
+      ArrowUp: "up",
+      ArrowDown: "down",
+      ArrowLeft: "left",
+      ArrowRight: "right",
+      w: "up",
+      s: "down",
+      a: "left",
+      d: "right",
+    };
+    const pressed = new Set<string>();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" || e.key === "Enter") {
+        e.preventDefault();
+        handleBomb();
+        return;
+      }
+      const dir = keyToDir[e.key];
+      if (!dir) return;
+      pressed.add(e.key);
+      handleDir(dir);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      const dir = keyToDir[e.key];
+      if (!dir) return;
+      pressed.delete(e.key);
+      // S'il reste une autre touche directionnelle enfoncée, on garde ce cap
+      const remaining = [...pressed].map((k) => keyToDir[k]).find(Boolean);
+      handleDir(remaining ?? null);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [handleDir, handleBomb]);
+
   const restart = () => {
     if (!isHost) return;
     const next = createInitialState(ctx.players);

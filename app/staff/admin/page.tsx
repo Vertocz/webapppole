@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import ThemeProvider from "@/components/ThemeProvider";
 import PushNotificationPanel from "@/components/PushNotificationPanel";
 import ManualBadgeAssign from "@/components/ManualBadgeAssign";
+import GamesAccessPanel from "@/components/GamesAccessPanel";
 import type { Staff, Joueuse } from "@/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -18,7 +19,7 @@ interface UploadedFile {
   error?: string;
 }
 
-type AdminTab = "billets" | "joueurs" | "notifications" | "badges";
+type AdminTab = "billets" | "joueurs" | "jeux" | "notifications" | "badges";
 
 interface ConfirmModal {
   title: string;
@@ -63,6 +64,7 @@ export default function AdminPage() {
   const tabs: { id: AdminTab; label: string; icon: string }[] = [
     { id: "billets",       label: "Billets",       icon: "🎫" },
     { id: "joueurs",       label: "Joueurs",        icon: "👥" },
+    { id: "jeux",          label: "Accès Jeux",     icon: "🎮" },
     { id: "badges",        label: "Badges",         icon: "🏅" },
     { id: "notifications", label: "Notifications",  icon: "🔔" },
   ];
@@ -121,6 +123,7 @@ export default function AdminPage() {
 
           {tab === "billets"       && <BilletsPanel />}
           {tab === "joueurs"       && <JoueursPanel user={user} />}
+          {tab === "jeux"          && <GamesAccessPanel />}
           {tab === "badges"        && <ManualBadgeAssign staffPhone={user.numero_tel} staffId={user.id} />}
           {tab === "notifications" && <PushNotificationPanel staffId={user.id} pole={pole} />}
 
