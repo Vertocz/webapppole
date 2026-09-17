@@ -18,13 +18,14 @@ import ExportPDFModal from "@/components/ExportPDFModal";
 import NotificationsPrompt from "@/components/NotificationsPrompt";
 import NotificationsInbox from "@/components/NotificationsInbox";
 import GamesTab from "@/components/games/GamesTab";
+import CarteAvantage from "@/components/CarteAvantage";
 import { useBadges } from "@/lib/useBadges";
 import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
 import NotifModal from "@/components/NotifModal";
 
-type View = "billets" | "joueurs" | "tournois" | "gares" | "jeux";
+type View = "billets" | "joueurs" | "tournois" | "gares" | "jeux" | "carte";
 
 export default function StaffPage() {
   const [user, setUser] = useState<Staff | null>(null);
@@ -34,6 +35,7 @@ export default function StaffPage() {
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
   const [view, setView] = useState<View>("joueurs");
   const [hasBillets, setHasBillets] = useState(false);
+  const [hasCarte, setHasCarte] = useState(false);
   const [newBadgeIds, setNewBadgeIds] = useState<string[]>([]);
   const [badgesChecked, setBadgesChecked] = useState(false);
   const [telephone, setTelephone] = useState("");
@@ -87,6 +89,13 @@ export default function StaffPage() {
         setHasBillets(has);
         if (has) setView("billets");
       });
+
+    supabase
+      .from("cartes")
+      .select("id")
+      .eq("joueuse_id", u.id)
+      .limit(1)
+      .then(({ data }) => setHasCarte((data ?? []).length > 0));
 
     const loadJoueurs = async () => {
       let query = supabase.from("joueuses").select("id, prenom, nom, numero_tel, categorie");
@@ -142,6 +151,7 @@ export default function StaffPage() {
   // Navigation personnelle du staff : ce qu'il consulte/fait pour lui-même.
   const viewTabs: { id: View; label: string; icon: string }[] = [
     ...(hasBillets ? [{ id: "billets" as View, label: "Mes billets", icon: "🎫" }] : []),
+    ...(hasCarte ? [{ id: "carte" as View, label: "Ma carte", icon: "💳" }] : []),
     { id: "joueurs", label: "Suivi joueurs", icon: "📊" },
     { id: "tournois", label: "Tournois", icon: "🏆" },
     { id: "jeux", label: "Jeux", icon: "🎮" },
@@ -247,6 +257,7 @@ export default function StaffPage() {
           </div>
 
           {view === "billets" && <Billets userId={user.id} />}
+          {view === "carte" && <CarteAvantage userId={user.id} />}
           {view === "tournois" && <Tournois />}
           {view === "gares" && <GaresLogistique />}
           {view === "jeux" && <GamesTab />}

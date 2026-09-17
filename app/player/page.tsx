@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Layout from "@/components/Layout";
 import ThemeProvider from "@/components/ThemeProvider";
 import Billets from "@/components/Billets";
+import CarteAvantage from "@/components/CarteAvantage";
 import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
@@ -29,11 +30,13 @@ const TAB_MENTALE = { id: "mentale", label: "Prépa mentale", icon: "🧠" };
 const TAB_TOURNOIS = { id: "tournois", label: "Tournois", icon: "🏆" };
 const TAB_BADGES = { id: "badges", label: "Badges", icon: "🏅" };
 const TAB_JEUX = { id: "jeux", label: "Jeux", icon: "🎮" };
+const TAB_CARTE = { id: "carte", label: "Ma carte", icon: "💳" };
 
 export default function JoueuseePage() {
   const [user, setUser] = useState<Joueuse | null>(null);
   const [activeTab, setActiveTab] = useState("sportif");
   const [hasBillets, setHasBillets] = useState(false);
+  const [hasCarte, setHasCarte] = useState(false);
   const [hasBadges, setHasBadges] = useState(false);
   const [newBadgeIds, setNewBadgeIds] = useState<string[]>([]);
   const [badgesChecked, setBadgesChecked] = useState(false);
@@ -59,6 +62,13 @@ export default function JoueuseePage() {
       .eq("joueuse_id", parsed.id)
       .limit(1)
       .then(({ data }) => setHasBillets((data ?? []).length > 0));
+
+    supabase
+      .from("cartes")
+      .select("id")
+      .eq("joueuse_id", parsed.id)
+      .limit(1)
+      .then(({ data }) => setHasCarte((data ?? []).length > 0));
 
     supabase
       .from("badges_joueur")
@@ -123,6 +133,7 @@ export default function JoueuseePage() {
     ...(isMasculin ? [TAB_MENTALE] : []),
     TAB_TOURNOIS,
     ...(user.acces_jeux ? [TAB_JEUX] : []),
+    ...(hasCarte ? [TAB_CARTE] : []),
     ...(hasBadges ? [TAB_BADGES] : []),
   ];
 
@@ -151,6 +162,7 @@ export default function JoueuseePage() {
         {activeTab === "mentale" && isMasculin && <PreparationMentale userId={user.id} onSave={handleSave} />}
         {activeTab === "tournois" && <Tournois />}
         {activeTab === "jeux" && user.acces_jeux && <GamesTab />}
+        {activeTab === "carte" && <CarteAvantage userId={user.id} />}
         {activeTab === "badges" && <BadgesTab userId={user.id} userType="joueur" categorie={user.categorie} />}
       </Layout>
 
