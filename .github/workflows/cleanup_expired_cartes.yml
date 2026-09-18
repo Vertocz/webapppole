@@ -1,0 +1,47 @@
+name: Nettoyage cartes avantage expirées
+
+on:
+  # Lancement automatique chaque lundi à 08h00 UTC — suppression réelle
+  schedule:
+    - cron: "0 8 * * 1"
+  # Lancement manuel depuis l'onglet Actions (dry-run par défaut)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Mode simulation (rien n'est supprimé ni notifié)"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      retention_days:
+        description: "Délai de grâce après expiration (jours)"
+        required: false
+        default: "60"
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "scripts/requirements.txt"
+
+      - name: Installer les dépendances
+        run: pip install -r scripts/requirements.txt
+
+      - name: Nettoyer les cartes expirées
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # En mode schedule : suppression réelle. En manuel : dry-run par défaut.
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          RETENTION_DAYS: ${{ github.event.inputs.retention_days || '60' }}
+        run: python scripts/cleanup_expired_cartes.py
