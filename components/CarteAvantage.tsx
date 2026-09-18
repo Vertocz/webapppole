@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import Card from "./Card";
 
 const STORAGE_BASE =
-  "https://fxvotvtapcwzvjhfreqv.supabase.co/storage/v1/object/public/Cartes/";
+  "https://fxvotvtapcwzvjhfreqv.supabase.co/storage/v1/object/public/cartes/";
 
 interface CarteRow {
   id: number;
