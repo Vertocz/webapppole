@@ -27,7 +27,7 @@ from rapidfuzz import fuzz, process as fuzz_process
 # ─── Configuration ─────────────────────────────────────────────────────────────
 URL    = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 KEY    = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-BUCKET = "cartes"
+BUCKET = "Cartes"
 
 if not URL or not KEY:
     raise EnvironmentError("NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont requis.")
@@ -217,13 +217,13 @@ def process_all():
                 "date_expiration":   date_expiration,
             }
 
-            existing = supabase.table("cartes").select("id").eq("joueuse_id", person_id).execute()
+            existing = supabase.table("Cartes").select("id").eq("joueuse_id", person_id).execute()
             if existing.data:
-                supabase.table("cartes").update(payload).eq("id", existing.data[0]["id"]).execute()
+                supabase.table("Cartes").update(payload).eq("id", existing.data[0]["id"]).execute()
                 print("🔄 Carte existante mise à jour (dates de validité actualisées).")
                 updated.append(new_name)
             else:
-                supabase.table("cartes").insert(payload).execute()
+                supabase.table("Cartes").insert(payload).execute()
                 print("✅ Carte associée.")
                 linked.append(new_name)
 
