@@ -11,6 +11,16 @@ interface CarteRow {
   id: number;
   nom_fichier: string;
   url_stockage: string;
+  type_carte: string | null;
+  date_expiration: string | null; // format ISO (YYYY-MM-DD)
+}
+
+function fmtDate(iso: string) {
+  return new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 export default function CarteAvantage({ userId }: { userId: string }) {
@@ -20,7 +30,7 @@ export default function CarteAvantage({ userId }: { userId: string }) {
   useEffect(() => {
     supabase
       .from("cartes")
-      .select("id, nom_fichier, url_stockage")
+      .select("id, nom_fichier, url_stockage, type_carte, date_expiration")
       .eq("joueuse_id", userId)
       .limit(1)
       .then(({ data }) => {
@@ -53,6 +63,12 @@ export default function CarteAvantage({ userId }: { userId: string }) {
     );
   }
 
+  const today = new Date(new Date().toDateString());
+  const expDate = carte.date_expiration ? new Date(carte.date_expiration + "T00:00:00") : null;
+  const isExpired = !!expDate && expDate < today;
+  const isSoon = !!expDate && !isExpired && expDate.getTime() - today.getTime() < 30 * 86400000;
+  const typeLabel = carte.type_carte?.replace(/^Carte Avantage\s*/i, "").trim();
+
   return (
     <div className="space-y-5">
       <h2 className="font-display text-2xl" style={{ color: "var(--text-main)" }}>
@@ -62,6 +78,29 @@ export default function CarteAvantage({ userId }: { userId: string }) {
       <Card>
         <div className="flex flex-col items-center gap-4 py-4 text-center">
           <span className="text-5xl">💳</span>
+
+          {typeLabel && (
+            <span
+              className="text-xs font-medium px-3 py-1 rounded-full"
+              style={{ background: "var(--bg-input)", color: "var(--text-sub)" }}
+            >
+              {typeLabel}
+            </span>
+          )}
+
+          {expDate && (
+            <p
+              className="text-sm font-medium"
+              style={{ color: isExpired ? "#f87171" : isSoon ? "#C49A28" : "#4ade80" }}
+            >
+              {isExpired
+                ? `⚠️ Carte expirée le ${fmtDate(carte.date_expiration!)}`
+                : isSoon
+                ? `⏳ Expire le ${fmtDate(carte.date_expiration!)} — pense à la renouveler`
+                : `✅ Valide jusqu'au ${fmtDate(carte.date_expiration!)}`}
+            </p>
+          )}
+
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             Ta carte avantage SNCF est prête — tu peux la présenter directement
             depuis ton téléphone, sans avoir besoin de la chercher ailleurs.
