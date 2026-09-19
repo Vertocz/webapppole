@@ -1,7 +1,7 @@
 """
 process_cartes.py — Association des cartes avantage SNCF aux joueurs/staff
 ─────────────────────────────────────────────────────────────────────────────
-Scanne le bucket "cartes", identifie le titulaire de chaque PDF par
+Scanne le bucket "Cartes", identifie le titulaire de chaque PDF par
 correspondance de nom (+ date de naissance si disponible pour départager),
 renomme le fichier et l'associe en base pour affichage direct dans l'app
 (onglet "Ma carte").

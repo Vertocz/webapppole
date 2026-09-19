@@ -35,7 +35,7 @@ from supabase.lib.client_options import ClientOptions
 # ─── Configuration ─────────────────────────────────────────────────────────────
 URL    = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 KEY    = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-BUCKET = "cartes"
+BUCKET = "Cartes"
 
 RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "60"))
 APP_BASE_URL   = os.getenv("APP_BASE_URL", "https://polefrance.vercel.app")

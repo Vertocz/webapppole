@@ -57,7 +57,7 @@ export default function CartesPanel() {
       setFiles((prev) => prev.map((f, i) => (i === index ? { ...f, status: "uploading" } : f)));
 
       const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-      const { error } = await supabase.storage.from("cartes").upload(safeName, file, { upsert: false });
+      const { error } = await supabase.storage.from("Cartes").upload(safeName, file, { upsert: false });
 
       if (error) {
         setFiles((prev) => prev.map((f, i) => (i === index ? { ...f, status: "error", error: error.message } : f)));
