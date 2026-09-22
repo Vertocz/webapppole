@@ -41,7 +41,7 @@ BUCKET = "Billets"
 RETENTION_DAYS = 7
 
 # DRY_RUN=true → affiche ce qui serait supprimé sans rien faire
-DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
+DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "false"
 
 if not URL or not KEY:
     raise EnvironmentError("NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont requis.")
