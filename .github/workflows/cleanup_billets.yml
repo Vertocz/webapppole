@@ -10,7 +10,7 @@ on:
       dry_run:
         description: "Mode simulation (rien n'est supprimé)"
         required: false
-        default: "true"
+        default: "false"
         type: choice
         options:
           - "true"
