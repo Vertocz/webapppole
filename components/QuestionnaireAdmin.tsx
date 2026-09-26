@@ -28,3 +28,4 @@ interface QuestionnaireRow {
   id: string;
   titre: string;
   questions: string[];
+}
