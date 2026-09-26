@@ -156,7 +156,7 @@ export default function SuiviSportif({ userId, readOnly = false, onSave }: { use
                           <span style={{ color: "#F87171" }}>💪 {a.difficulte}/10</span>
                           <span style={{ color: "#86efac" }}>😄 {a.plaisir}/10</span>
                         </div>
-                        {a.commentaire && <p className="text-xs mt-2 italic" style={{ color: "var(--text-muted)" }}>&ldquo;{a.commentaire}&rdquo;</p>}
+                        {a.commentaire && <p className="text-xs mt-2 italic" style={{ color: "var(--text-main)" }}>&ldquo;{a.commentaire}&rdquo;</p>}
                       </div>
                       {!readOnly && (
                         <div className="flex gap-1.5 shrink-0">
