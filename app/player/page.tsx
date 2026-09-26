@@ -20,6 +20,7 @@ import NotificationsPrompt from "@/components/NotificationsPrompt";
 import NotificationsInbox from "@/components/NotificationsInbox";
 import { useBadges } from "@/lib/useBadges";
 import NotifModal from "@/components/NotifModal";
+import QuestionnaireTab from "@/components/QuestionnaireTab";
 
 const ALL_BASE_TABS = [
   { id: "billets", label: "Billets", icon: "🎫" },
@@ -31,6 +32,7 @@ const TAB_TOURNOIS = { id: "tournois", label: "Tournois", icon: "🏆" };
 const TAB_BADGES = { id: "badges", label: "Badges", icon: "🏅" };
 const TAB_JEUX = { id: "jeux", label: "Jeux", icon: "🎮" };
 const TAB_CARTE = { id: "carte", label: "Ma carte", icon: "💳" };
+const TAB_QUESTIONNAIRE = { id: "questionnaire", label: "Questionnaire", icon: "📝" };
 
 export default function JoueuseePage() {
   const [user, setUser] = useState<Joueuse | null>(null);
@@ -44,6 +46,7 @@ export default function JoueuseePage() {
   const [notifId, setNotifId] = useState<string | null>(null);
   const router = useRouter();
   const { checkAndAward } = useBadges();
+  const [hasQuestionnaire, setHasQuestionnaire] = useState(false);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("user");
@@ -62,6 +65,12 @@ export default function JoueuseePage() {
       .eq("joueuse_id", parsed.id)
       .limit(1)
       .then(({ data }) => setHasBillets((data ?? []).length > 0));
+    supabase
+      .from("questionnaire_destinataires")
+      .select("id")
+      .eq("joueuse_id", parsed.id)
+      .limit(1)
+      .then(({ data }) => setHasQuestionnaire((data ?? []).length > 0));
 
     supabase
       .from("cartes")
@@ -135,6 +144,7 @@ export default function JoueuseePage() {
     ...(user.acces_jeux ? [TAB_JEUX] : []),
     ...(hasCarte ? [TAB_CARTE] : []),
     ...(hasBadges ? [TAB_BADGES] : []),
+    ...(hasQuestionnaire ? [TAB_QUESTIONNAIRE] : []),
   ];
 
   return (
@@ -164,6 +174,7 @@ export default function JoueuseePage() {
         {activeTab === "jeux" && user.acces_jeux && <GamesTab />}
         {activeTab === "carte" && <CarteAvantage userId={user.id} />}
         {activeTab === "badges" && <BadgesTab userId={user.id} userType="joueur" categorie={user.categorie} />}
+        {activeTab === "questionnaire" && <QuestionnaireTab userId={user.id} />}
       </Layout>
 
       <PwaBanner />
