@@ -157,7 +157,7 @@ export default function SuiviForme({ userId, readOnly = false, onSave }: { userI
                             </div>
                           ))}
                         </div>
-                        {d.commentaire && <p className="text-xs italic mt-2" style={{ color: "var(--text-muted)" }}>&ldquo;{d.commentaire}&rdquo;</p>}
+                        {d.commentaire && <p className="text-xs italic mt-2" style={{ color: "var(--text-main)" }}>&ldquo;{d.commentaire}&rdquo;</p>}
                       </div>
                       {!readOnly && (
                         <div className="flex gap-1.5 shrink-0">
