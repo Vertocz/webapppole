@@ -196,7 +196,7 @@ export default function SuiviForme({ userId, readOnly = false, onSave }: { userI
                         </div>
                         {d.commentaire && (
   <p className="text-sm mt-2 italic rounded-lg px-3 py-2"
-    style={{ color: "var(--text-sub)", background: "rgba(255,255,255,0.03)", borderLeft: "2px solid var(--border)" }}>
+    style={{ color: "var(--text-main)", background: "rgba(255,255,255,0.03)", borderLeft: "2px solid var(--border)" }}>
     &ldquo;{d.commentaire}&rdquo;
   </p>
 )}
