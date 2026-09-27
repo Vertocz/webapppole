@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Activite } from "@/types";
 import Card from "./Card";
@@ -12,8 +12,35 @@ const SPORTS = [
   "🏸 Badminton", "🏊‍♂️ Natation", "🏋️‍♂️ Renforcement musculaire", "⚽ Football", "Autre",
 ];
 
+// ─── Plage de dates chargée depuis Supabase ────────────────────────────────────
+// "jours: null" = pas de filtre de date (tout l'historique)
+const RANGES: { val: string; label: string; jours: number | null }[] = [
+  { val: "30",  label: "30 jours", jours: 30 },
+  { val: "90",  label: "3 mois",   jours: 90 },
+  { val: "365", label: "1 an",     jours: 365 },
+  { val: "all", label: "Tout",     jours: null },
+];
+
 const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" } as React.CSSProperties;
 const labelStyle = { display: "block", fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--text-sub)", marginBottom: "0.5rem" };
+
+function RangeSwitch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-1 p-1 rounded-xl overflow-x-auto scrollbar-hide" style={{ background: "rgba(255,255,255,0.04)" }}>
+      {RANGES.map((r) => (
+        <button key={r.val} onClick={() => onChange(r.val)}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 whitespace-nowrap"
+          style={{
+            background: value === r.val ? "var(--primary)" : "transparent",
+            color: value === r.val ? "white" : "var(--text-muted)",
+            boxShadow: value === r.val ? "0 2px 8px rgba(27,58,140,0.4)" : "none",
+          }}>
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function SuiviSportif({ userId, readOnly = false, onSave }: { userId: string; readOnly?: boolean; onSave?: () => void }) {
   const [activites, setActivites] = useState<Activite[]>([]);
@@ -22,6 +49,7 @@ export default function SuiviSportif({ userId, readOnly = false, onSave }: { use
   const [saved, setSaved] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [plage, setPlage] = useState<string>("30");
 
   const [sport, setSport] = useState(SPORTS[0]);
   const [duree, setDuree] = useState("");
@@ -30,14 +58,21 @@ export default function SuiviSportif({ userId, readOnly = false, onSave }: { use
   const [dateActivite, setDateActivite] = useState(new Date().toISOString().split("T")[0]);
   const [commentaire, setCommentaire] = useState("");
 
-  const load = async () => {
-    const d = new Date(); d.setDate(d.getDate() - 60);
-    const { data } = await supabase.from("activites").select("*").eq("joueuse_id", userId)
-      .gte("date", d.toISOString().split("T")[0]).order("date", { ascending: false });
-    setActivites(data ?? []); setLoading(false);
-  };
+  const range = RANGES.find((r) => r.val === plage) ?? RANGES[0];
 
-  useEffect(() => { load(); }, [userId]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    let query = supabase.from("activites").select("*").eq("joueuse_id", userId).order("date", { ascending: false });
+    if (range.jours !== null) {
+      const d = new Date(); d.setDate(d.getDate() - range.jours);
+      query = query.gte("date", d.toISOString().split("T")[0]);
+    }
+    const { data } = await query;
+    setActivites(data ?? []);
+    setLoading(false);
+  }, [userId, plage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { load(); }, [load]);
 
   const resetForm = () => {
     setEditingId(null); setSport(SPORTS[0]); setDuree(""); setDifficulte(5); setPlaisir(5);
@@ -129,11 +164,14 @@ export default function SuiviSportif({ userId, readOnly = false, onSave }: { use
       <GraphiqueSportif activites={activites} />
 
       <div>
-        <h3 className="font-display text-xl mb-4" style={{ color: "var(--text-main)" }}>
-          {readOnly ? "SÉANCES (30 DERNIERS JOURS)" : "HISTORIQUE (30 DERNIERS JOURS)"}
-        </h3>
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <h3 className="font-display text-xl" style={{ color: "var(--text-main)" }}>
+            {readOnly ? `SÉANCES (${range.label.toUpperCase()})` : `HISTORIQUE (${range.label.toUpperCase()})`}
+          </h3>
+          <RangeSwitch value={plage} onChange={setPlage} />
+        </div>
         {loading ? <Spinner /> : activites.length === 0 ? (
-          <Card><p className="text-center py-4" style={{ color: "var(--text-muted)" }}>Aucune séance ces 30 derniers jours.</p></Card>
+          <Card><p className="text-center py-4" style={{ color: "var(--text-muted)" }}>Aucune séance sur cette période.</p></Card>
         ) : (
           <div className="space-y-3">
             {activites.map((a, i) => (
@@ -146,7 +184,7 @@ export default function SuiviSportif({ userId, readOnly = false, onSave }: { use
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-xs font-medium tracking-widest uppercase" style={{ color: "var(--text-sub)" }}>
-                            {new Date(a.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                            {new Date(a.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}
                           </span>
                           <span className="text-xs" style={{ color: "var(--text-muted)" }}>·</span>
                           <span className="text-sm font-medium" style={{ color: "var(--text-main)" }}>{a.sport}</span>
@@ -156,7 +194,7 @@ export default function SuiviSportif({ userId, readOnly = false, onSave }: { use
                           <span style={{ color: "#F87171" }}>💪 {a.difficulte}/10</span>
                           <span style={{ color: "#86efac" }}>😄 {a.plaisir}/10</span>
                         </div>
-                        {a.commentaire && <p className="text-xs mt-2 italic" style={{ color: "var(--text-main)" }}>&ldquo;{a.commentaire}&rdquo;</p>}
+                        {a.commentaire && <p className="text-xs mt-2 italic" style={{ color: "var(--text-muted)" }}>&ldquo;{a.commentaire}&rdquo;</p>}
                       </div>
                       {!readOnly && (
                         <div className="flex gap-1.5 shrink-0">
