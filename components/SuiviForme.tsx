@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import type { SuiviForme as SuiviFormeType } from "@/types";
 import Card from "./Card";
@@ -15,8 +15,35 @@ const LABELS = {
   humeur:  { icon: "😊", label: "Humeur générale",    sub: "😡 Irritable → 🥳 Très positif" },
 };
 
+// ─── Plage de dates chargée depuis Supabase ────────────────────────────────────
+// "jours: null" = pas de filtre de date (tout l'historique)
+const RANGES: { val: string; label: string; jours: number | null }[] = [
+  { val: "30",  label: "30 jours", jours: 30 },
+  { val: "90",  label: "3 mois",   jours: 90 },
+  { val: "365", label: "1 an",     jours: 365 },
+  { val: "all", label: "Tout",     jours: null },
+];
+
 const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" } as React.CSSProperties;
 const labelStyle = { display: "block", fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--text-sub)", marginBottom: "0.5rem" };
+
+function RangeSwitch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-1 p-1 rounded-xl overflow-x-auto scrollbar-hide" style={{ background: "rgba(255,255,255,0.04)" }}>
+      {RANGES.map((r) => (
+        <button key={r.val} onClick={() => onChange(r.val)}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 whitespace-nowrap"
+          style={{
+            background: value === r.val ? "var(--primary)" : "transparent",
+            color: value === r.val ? "white" : "var(--text-muted)",
+            boxShadow: value === r.val ? "0 2px 8px rgba(27,58,140,0.4)" : "none",
+          }}>
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function SuiviForme({ userId, readOnly = false, onSave }: { userId: string; readOnly?: boolean; onSave?: () => void }) {
   const [data, setData] = useState<SuiviFormeType[]>([]);
@@ -25,6 +52,7 @@ export default function SuiviForme({ userId, readOnly = false, onSave }: { userI
   const [saved, setSaved] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [plage, setPlage] = useState<string>("30");
 
   const [dateS, setDateS] = useState(new Date().toISOString().split("T")[0]);
   const [fatigue, setFatigue] = useState(3);
@@ -34,14 +62,20 @@ export default function SuiviForme({ userId, readOnly = false, onSave }: { userI
   const [humeur, setHumeur] = useState(3);
   const [commentaire, setCommentaire] = useState("");
 
-  const load = async () => {
-    const d = new Date(); d.setDate(d.getDate() - 60);
-    const { data: d2 } = await supabase.from("suivi_forme").select("*").eq("joueuse_id", userId)
-      .gte("date", d.toISOString().split("T")[0]).order("date", { ascending: false });
-    setData(d2 ?? []); setLoading(false);
-  };
+  const range = RANGES.find((r) => r.val === plage) ?? RANGES[0];
 
-  useEffect(() => { load(); }, [userId]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    let query = supabase.from("suivi_forme").select("*").eq("joueuse_id", userId).order("date", { ascending: false });
+    if (range.jours !== null) {
+      const d = new Date(); d.setDate(d.getDate() - range.jours);
+      query = query.gte("date", d.toISOString().split("T")[0]);
+    }
+    const { data: d2 } = await query;
+    setData(d2 ?? []); setLoading(false);
+  }, [userId, plage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { load(); }, [load]);
 
   const resetForm = () => {
     setEditingId(null); setDateS(new Date().toISOString().split("T")[0]);
@@ -128,13 +162,16 @@ export default function SuiviForme({ userId, readOnly = false, onSave }: { userI
       <GraphiqueForme data={data} />
 
       <div>
-        <h3 className="font-display text-xl mb-4" style={{ color: "var(--text-main)" }}>
-          {readOnly ? "FORME (30 DERNIERS JOURS)" : "HISTORIQUE (30 DERNIERS JOURS)"}
-        </h3>
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <h3 className="font-display text-xl" style={{ color: "var(--text-main)" }}>
+            {readOnly ? `FORME (${range.label.toUpperCase()})` : `HISTORIQUE (${range.label.toUpperCase()})`}
+          </h3>
+          <RangeSwitch value={plage} onChange={setPlage} />
+        </div>
         {loading ? (
           <div className="flex justify-center py-8"><div className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--spinner)", borderTopColor: "transparent" }} /></div>
         ) : data.length === 0 ? (
-          <Card><p className="text-center py-4" style={{ color: "var(--text-muted)" }}>Aucune donnée ces 30 derniers jours.</p></Card>
+          <Card><p className="text-center py-4" style={{ color: "var(--text-muted)" }}>Aucune donnée sur cette période.</p></Card>
         ) : (
           <div className="space-y-3">
             {data.map((d, i) => (
@@ -144,7 +181,7 @@ export default function SuiviForme({ userId, readOnly = false, onSave }: { userI
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <p className="text-xs font-medium tracking-widest uppercase mb-3" style={{ color: "var(--text-sub)" }}>
-                          {new Date(d.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
+                          {new Date(d.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
                         </p>
                         <div className="grid grid-cols-5 gap-2 mb-2">
                           {Object.entries(LABELS).map(([key, meta]) => (
@@ -157,7 +194,7 @@ export default function SuiviForme({ userId, readOnly = false, onSave }: { userI
                             </div>
                           ))}
                         </div>
-                        {d.commentaire && <p className="text-xs italic mt-2" style={{ color: "var(--text-main)" }}>&ldquo;{d.commentaire}&rdquo;</p>}
+                        {d.commentaire && <p className="text-xs italic mt-2" style={{ color: "var(--text-muted)" }}>&ldquo;{d.commentaire}&rdquo;</p>}
                       </div>
                       {!readOnly && (
                         <div className="flex gap-1.5 shrink-0">
