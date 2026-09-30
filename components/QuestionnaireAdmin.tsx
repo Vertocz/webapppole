@@ -272,7 +272,7 @@ export default function QuestionnaireAdmin({ staffId }: { staffId: string }) {
                   )}
                 </div>
               ))}
-              {questions.length < 8 && (
+              {questions.length < 10 && (
                 <button onClick={addQuestion} className="text-xs px-2 py-1 rounded-lg" style={{ color: accent }}>
                   + Ajouter une question
                 </button>
