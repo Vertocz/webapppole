@@ -33,14 +33,69 @@ export type NetMessage =
 // Pas de STUN/TURN : réseau local uniquement (hotspot avion)
 const RTC_CONFIG: RTCConfiguration = { iceServers: [] };
 
-function encodePayload(obj: unknown): string {
-  const json = JSON.stringify(obj);
-  return btoa(unescape(encodeURIComponent(json)));
+// ─── Encodage compact pour QR ─────────────────────────────────────────────────
+// Plus le payload est court, moins le QR a de modules => scan bien plus fiable.
+// Format : "1" + base64url(deflate-raw(json)) ou "0" + base64url(json) en repli.
+
+function toB64Url(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function decodePayload<T = unknown>(str: string): T {
-  const json = decodeURIComponent(escape(atob(str)));
-  return JSON.parse(json) as T;
+function fromB64Url(str: string): Uint8Array {
+  const b64 = str.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function pipeThrough(
+  data: Uint8Array,
+  stream: CompressionStream | DecompressionStream
+): Promise<Uint8Array> {
+  const writer = stream.writable.getWriter();
+  writer.write(data as unknown as BufferSource);
+  writer.close();
+  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+}
+
+/** Retire de la SDP ce qui est inutile en réseau local (TCP, IPv6) */
+function slimSdp(desc: RTCSessionDescriptionInit | null): RTCSessionDescriptionInit {
+  if (!desc?.sdp) throw new Error("SDP manquante");
+  const lines = desc.sdp.split(/\r?\n/).filter((l) => {
+    if (!l.startsWith("a=candidate")) return true;
+    if (/ tcp /i.test(l)) return false; // candidats TCP
+    if (/ [0-9a-f]*:[0-9a-f:]+ \d+ typ/i.test(l)) return false; // IPv6
+    return true;
+  });
+  return { type: desc.type, sdp: lines.join("\r\n") };
+}
+
+async function encodePayload(obj: unknown): Promise<string> {
+  const raw = new TextEncoder().encode(JSON.stringify(obj));
+  if (typeof CompressionStream !== "undefined") {
+    try {
+      const packed = await pipeThrough(raw, new CompressionStream("deflate-raw"));
+      return "1" + toB64Url(packed);
+    } catch {
+      /* repli non compressé */
+    }
+  }
+  return "0" + toB64Url(raw);
+}
+
+async function decodePayload<T = unknown>(str: string): Promise<T> {
+  const mode = str[0];
+  const bytes = fromB64Url(str.slice(1));
+  let raw = bytes;
+  if (mode === "1") {
+    raw = await pipeThrough(bytes, new DecompressionStream("deflate-raw"));
+  } else if (mode !== "0") {
+    throw new Error("Format de QR inconnu");
+  }
+  return JSON.parse(new TextDecoder().decode(raw)) as T;
 }
 
 function newId(): string {
@@ -103,13 +158,17 @@ export class HostRoom {
     await pc.setLocalDescription(offer);
     await waitIceComplete(pc);
 
-    const qrPayload = encodePayload({ kind: "offer", peerId, sdp: pc.localDescription });
+    const qrPayload = await encodePayload({
+      kind: "offer",
+      peerId,
+      sdp: slimSdp(pc.localDescription),
+    });
     return { peerId, qrPayload };
   }
 
   /** Termine l'invitation une fois la réponse (QR scanné) du joueur reçue */
   async completeInvite(peerId: string, answerQrPayload: string) {
-    const decoded = decodePayload<{ kind: string; sdp: RTCSessionDescriptionInit; name: string }>(
+    const decoded = await decodePayload<{ kind: string; sdp: RTCSessionDescriptionInit; name: string }>(
       answerQrPayload
     );
     const entry = this.peers.get(peerId);
@@ -175,13 +234,17 @@ export class ClientRoom {
 
   /** À partir du QR de l'hôte (offer), génère la réponse (answer) à réafficher en QR */
   async joinFromOffer(offerQrPayload: string, myName: string): Promise<string> {
-    const decoded = decodePayload<{ kind: string; peerId: string; sdp: RTCSessionDescriptionInit }>(
+    const decoded = await decodePayload<{ kind: string; peerId: string; sdp: RTCSessionDescriptionInit }>(
       offerQrPayload
     );
     await this.pc.setRemoteDescription(decoded.sdp);
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
     await waitIceComplete(this.pc);
-    return encodePayload({ kind: "answer", sdp: this.pc.localDescription, name: myName });
+    return encodePayload({
+      kind: "answer",
+      sdp: slimSdp(this.pc.localDescription),
+      name: myName,
+    });
   }
 }

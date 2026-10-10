@@ -1,8 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RoomConnect, { RoomContext } from "./RoomConnect";
 import type { NetMessage } from "@/lib/p2pRoom";
+import {
+  MIN_ATTEMPTS_RECORD,
+  fetchRecordman,
+  getIdentity,
+  loadLocalStats,
+  mergeStats,
+  pullMyStats,
+  pushStats,
+  saveLocalStats,
+  type LFIdentity,
+  type LFStats,
+  type Recordman,
+} from "@/lib/lancerFrancStats";
 
 /* ════════════════════════════════════════════════════════════════════════════
    1. TERRAIN & PHYSIQUE (unités réelles, mètres / secondes)
@@ -251,7 +264,7 @@ interface GestureMetrics {
   lateral: number; // -1 gauche … +1 droite
   axis: number; // 0…1 : maintien de l'axe pendant tout le geste
   timing: number; // 0…1 : synchro montée → cassé
-  source: "motion" | "pointer";
+  source: "motion";
 }
 
 interface Difficulty {
@@ -682,20 +695,16 @@ function drawScene(g: CanvasRenderingContext2D, c: Cam, W: number, H: number, o:
 function CourtCanvas({
   shot,
   onDone,
-  aimHint,
 }: {
   shot: SimResult | null;
   onDone: (s: SimResult) => void;
-  aimHint: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const shotRef = useRef<SimResult | null>(null);
   const startRef = useRef(0);
   const firedRef = useRef(true);
   const doneRef = useRef(onDone);
-  const aimRef = useRef(aimHint);
   doneRef.current = onDone;
-  aimRef.current = aimHint;
 
   useEffect(() => {
     if (!shot) return;
@@ -717,10 +726,9 @@ function CourtCanvas({
     const resize = () => {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       W = canvas.clientWidth;
-      H = Math.round(W * 1.2);
+      H = canvas.clientHeight;
       canvas.width = W * dpr;
       canvas.height = H * dpr;
-      canvas.style.height = `${H}px`;
       const g = canvas.getContext("2d");
       if (g) g.setTransform(dpr, 0, 0, dpr, 0, 0);
       cam = makeCam(W, H);
@@ -770,23 +778,6 @@ function CourtCanvas({
       }
 
       drawScene(g, cam, W, H, { ball, spinRad, trail, netKick, accent, glow });
-
-      // repère d'axe pendant la visée
-      if (!s || firedRef.current) {
-        const a = project(cam, 0, RIM_Y - 0.02, RIM_Z);
-        const b = project(cam, aimRef.current * 0.01, RELEASE.y + 0.25, RELEASE.z + 0.5);
-        if (a && b) {
-          g.save();
-          g.setLineDash([4, 8]);
-          g.strokeStyle = "rgba(255,255,255,0.14)";
-          g.lineWidth = 1.5;
-          g.beginPath();
-          g.moveTo(b.x, b.y);
-          g.lineTo(a.x, a.y);
-          g.stroke();
-          g.restore();
-        }
-      }
     };
     raf = requestAnimationFrame(loop);
     return () => {
@@ -795,14 +786,14 @@ function CourtCanvas({
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="w-full block rounded-2xl" style={{ border: "1px solid var(--border-card)" }} />;
+  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" />;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   4. CAPTEURS — contrôleur mobile
-   Montée (accélération sur l'axe Y du téléphone, intégrée en vitesse)
-   puis cassé de poignet (pic de rotationRate.beta) dans la foulée.
-   L'orientation doit rester dans l'axe pendant tout le geste.
+   4. CAPTEURS — le téléphone EST le ballon
+   Pas de bouton « armer » : dès que le téléphone est tenu droit, chaque geste
+   (montée franche puis cassé de poignet) déclenche un tir. Il n'y a rien à
+   calibrer : l'indicateur « Prêt » passe au vert quand l'orientation est bonne.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const IDEAL_PUSH_V = 2.0; // m/s au sommet de la montée
@@ -814,8 +805,9 @@ const DELAY_TOL = 0.22;
 const TARGET_BETA = 74; // téléphone tenu quasi vertical, écran vers soi
 const BETA_TOL = 26;
 const GAMMA_TOL = 14;
+const COOLDOWN_S = 0.8; // ignore le mouvement de retour après un tir
 
-type Perm = "unknown" | "unsupported" | "granted" | "denied";
+type Perm = "checking" | "ask" | "granted" | "denied" | "nosensor";
 
 async function askSensors(): Promise<boolean> {
   try {
@@ -842,27 +834,17 @@ const buzz = (ms: number | number[]) => {
   }
 };
 
-function MotionController({
-  disabled,
-  onShot,
-  onFallback,
-}: {
-  disabled: boolean;
-  onShot: (m: GestureMetrics) => void;
-  onFallback: () => void;
-}) {
-  const [perm, setPerm] = useState<Perm>("unknown");
-  const [armed, setArmed] = useState(false);
+function useShotSensor(onShot: (m: GestureMetrics) => void) {
+  const [perm, setPerm] = useState<Perm>("checking");
   const [stage, setStage] = useState<"wait" | "rise" | "snap">("wait");
   const [aligned, setAligned] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
 
-  const bubbleRef = useRef<HTMLDivElement>(null);
   const gaugeRef = useRef<HTMLDivElement>(null);
   const tiltRef = useRef({ beta: TARGET_BETA, gamma: 0, ok: false });
-  const armedRef = useRef(false);
-  const disabledRef = useRef(disabled);
-  disabledRef.current = disabled;
+  const cooldownRef = useRef(0);
+  const onShotRef = useRef(onShot);
+  onShotRef.current = onShot;
 
   const gRef = useRef({ x: 0, y: 0, z: 0, init: false });
   const stRef = useRef({
@@ -876,17 +858,49 @@ function MotionController({
     snapPeak: 0,
     snapT: 0,
     cross: 0,
-    beta: 0,
     rollSum: 0,
     yawDrift: 0,
     n: 0,
     last: 0,
   });
 
+  // Autorisation : seul iOS demande un clic ; ailleurs les capteurs sont libres.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (typeof window.DeviceMotionEvent === "undefined") setPerm("unsupported");
+    if (typeof window.DeviceMotionEvent === "undefined") {
+      setPerm("nosensor");
+      return;
+    }
+    const DM = window.DeviceMotionEvent as unknown as { requestPermission?: unknown };
+    setPerm(typeof DM.requestPermission === "function" ? "ask" : "granted");
   }, []);
+
+  const enable = useCallback(async () => {
+    const ok = await askSensors();
+    setPerm(ok ? "granted" : "denied");
+  }, []);
+
+  // Ordinateur sans capteur : l'événement existe mais ne contient rien.
+  useEffect(() => {
+    if (perm !== "granted") return;
+    let seen = false;
+    const probe = (e: DeviceMotionEvent) => {
+      if (
+        e.accelerationIncludingGravity?.x != null ||
+        e.acceleration?.x != null ||
+        e.rotationRate?.beta != null
+      )
+        seen = true;
+    };
+    window.addEventListener("devicemotion", probe);
+    const to = setTimeout(() => {
+      if (!seen) setPerm("nosensor");
+    }, 2500);
+    return () => {
+      window.removeEventListener("devicemotion", probe);
+      clearTimeout(to);
+    };
+  }, [perm]);
 
   const reset = useCallback(() => {
     const s = stRef.current;
@@ -913,20 +927,15 @@ function MotionController({
     const crossRatio = s.snapPeak > 40 ? clamp(s.cross / s.snapPeak) : 0.5;
     const axis = clamp(1 - meanRoll / 20 - crossRatio * 0.45);
     const lateralRad = Math.atan2(s.vx, Math.max(0.35, s.vy));
-    const lateral = clamp(
-      ((lateralRad * 180) / Math.PI) / 5.5 + s.yawDrift / 10,
-      -1,
-      1
-    );
+    const lateral = clamp(((lateralRad * 180) / Math.PI) / 5.5 + s.yawDrift / 10, -1, 1);
 
-    armedRef.current = false;
-    setArmed(false);
+    cooldownRef.current = performance.now() / 1000 + COOLDOWN_S;
     reset();
     buzz(s.snapPeak > 200 ? [12, 40, 22] : 18);
-    onShot({ push, snap, lateral, axis, timing, source: "motion" });
-  }, [onShot, reset]);
+    onShotRef.current({ push, snap, lateral, axis, timing, source: "motion" });
+  }, [reset]);
 
-  // orientation
+  // Orientation : sert uniquement à savoir si le téléphone est bien tenu.
   useEffect(() => {
     if (perm !== "granted") return;
     const h = (e: DeviceOrientationEvent) => {
@@ -934,19 +943,13 @@ function MotionController({
       const gamma = e.gamma ?? 0;
       const ok = Math.abs(beta - TARGET_BETA) < BETA_TOL && Math.abs(gamma) < GAMMA_TOL;
       tiltRef.current = { beta, gamma, ok };
-      if (bubbleRef.current) {
-        const dx = clamp(gamma / 30, -1, 1) * 42;
-        const dy = clamp((beta - TARGET_BETA) / 40, -1, 1) * -42;
-        bubbleRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
-        bubbleRef.current.style.background = ok ? "#4ade80" : "var(--accent)";
-      }
       setAligned((prev) => (prev === ok ? prev : ok));
     };
     window.addEventListener("deviceorientation", h);
     return () => window.removeEventListener("deviceorientation", h);
   }, [perm]);
 
-  // mouvement
+  // Mouvement : détection montée → cassé de poignet, en continu.
   useEffect(() => {
     if (perm !== "granted") return;
     const h = (e: DeviceMotionEvent) => {
@@ -983,9 +986,8 @@ function MotionController({
       const rg = Math.abs(rr?.gamma ?? 0);
       const ra = Math.abs(rr?.alpha ?? 0);
 
-      if (!armedRef.current || disabledRef.current) return;
-
       if (s.state === "idle") {
+        if (now < cooldownRef.current) return;
         if (!tiltRef.current.ok) return;
         if (ay > 2.6) {
           s.state = "rise";
@@ -996,6 +998,7 @@ function MotionController({
           s.peakV = s.vy;
           s.rollSum = Math.abs(tiltRef.current.gamma);
           s.n = 1;
+          setHint(null);
           setStage("rise");
         }
         return;
@@ -1013,7 +1016,7 @@ function MotionController({
           gaugeRef.current.style.transform = `scaleX(${clamp(s.peakV / (IDEAL_PUSH_V * 1.45))})`;
         }
         if (now - s.t0 > 1.4) {
-          setHint("Geste trop long — recommence la montée.");
+          setHint("Geste trop long, recommence.");
           reset();
           return;
         }
@@ -1042,332 +1045,19 @@ function MotionController({
     return () => window.removeEventListener("devicemotion", h);
   }, [perm, fire, reset]);
 
-  // désarmement automatique
+  // Les messages d'aide s'effacent seuls
   useEffect(() => {
-    if (!armed) return;
-    const to = setTimeout(() => {
-      if (stRef.current.state === "idle") {
-        armedRef.current = false;
-        setArmed(false);
-        setHint("Temps écoulé. Réarme quand tu es prêt.");
-      }
-    }, 8000);
+    if (!hint) return;
+    const to = setTimeout(() => setHint(null), 2500);
     return () => clearTimeout(to);
-  }, [armed]);
+  }, [hint]);
 
-  const enable = async () => {
-    const ok = await askSensors();
-    setPerm(ok ? "granted" : "denied");
-    if (!ok) setHint("Capteurs refusés — bascule sur le geste au doigt.");
-  };
-
-  if (perm !== "granted") {
-    return (
-      <div className="rounded-2xl p-5 space-y-3 text-center" style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)" }}>
-        <p className="text-sm" style={{ color: "var(--text-main)" }}>
-          {perm === "unsupported"
-            ? "Ce navigateur n'expose pas les capteurs de mouvement."
-            : "Le tir se fait avec le téléphone lui‑même : montée franche, puis cassé du poignet."}
-        </p>
-        {perm !== "unsupported" && (
-          <button
-            onClick={enable}
-            className="w-full py-3 rounded-xl text-sm font-semibold active:scale-95 transition-transform"
-            style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "#fff" }}
-          >
-            Autoriser les capteurs
-          </button>
-        )}
-        <button onClick={onFallback} className="text-xs underline" style={{ color: "var(--text-muted)" }}>
-          Tirer au doigt à la place
-        </button>
-        {hint && <p className="text-xs" style={{ color: "var(--text-muted)" }}>{hint}</p>}
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl p-4 space-y-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)" }}>
-      <div className="flex items-center gap-4">
-        {/* niveau à bulle */}
-        <div
-          className="relative shrink-0 rounded-full"
-          style={{
-            width: 104,
-            height: 104,
-            background: "var(--bg-input)",
-            border: `2px solid ${aligned ? "#4ade80" : "var(--border)"}`,
-            transition: "border-color .2s",
-          }}
-        >
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="rounded-full" style={{ width: 34, height: 34, border: "1px dashed var(--border)" }} />
-          </div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div
-              ref={bubbleRef}
-              className="rounded-full"
-              style={{ width: 16, height: 16, background: "var(--accent)", transition: "background .2s" }}
-            />
-          </div>
-        </div>
-
-        <div className="flex-1 space-y-2">
-          <p className="text-sm font-medium" style={{ color: "var(--text-main)" }}>
-            {!armed
-              ? "Tiens le téléphone droit, écran vers toi."
-              : stage === "wait"
-              ? aligned
-                ? "Prêt. Monte le téléphone d'un geste franc."
-                : "Redresse le téléphone pour armer le tir."
-              : stage === "rise"
-              ? "Monte…"
-              : "Casse le poignet !"}
-          </p>
-          <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-input)" }}>
-            <div
-              ref={gaugeRef}
-              className="h-full origin-left"
-              style={{
-                background: "linear-gradient(90deg,var(--accent),var(--accent2))",
-                transform: "scaleX(0)",
-                transition: "transform .06s linear",
-              }}
-            />
-          </div>
-          <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-            Poussée mesurée pendant la montée
-          </p>
-        </div>
-      </div>
-
-      <button
-        disabled={disabled}
-        onClick={() => {
-          if (armed) {
-            armedRef.current = false;
-            setArmed(false);
-            reset();
-            return;
-          }
-          setHint(null);
-          reset();
-          armedRef.current = true;
-          setArmed(true);
-          buzz(14);
-        }}
-        className="w-full py-4 rounded-xl text-sm font-semibold active:scale-95 transition-transform disabled:opacity-40"
-        style={
-          armed
-            ? { background: "var(--bg-input)", color: "var(--text-main)", border: "1px solid var(--border)" }
-            : { background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "#fff" }
-        }
-      >
-        {armed ? "Annuler" : "Armer le tir"}
-      </button>
-
-      <div className="flex items-center justify-between">
-        {hint ? (
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>{hint}</p>
-        ) : (
-          <span />
-        )}
-        <button onClick={onFallback} className="text-xs underline shrink-0" style={{ color: "var(--text-muted)" }}>
-          Passer au doigt
-        </button>
-      </div>
-    </div>
-  );
+  return { perm, enable, stage, aligned, hint, gaugeRef };
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   5. SOURIS / DOIGT — même geste, transposé au tracé
-   Montée rectiligne, puis rupture de direction rapide au sommet.
+   5. JEU
    ═══════════════════════════════════════════════════════════════════════════ */
-
-const IDEAL_STROKE = 4.4; // hauteurs de zone par seconde
-const STROKE_TOL = 2.8;
-const IDEAL_TURN = 620; // °/s de rupture de direction
-const TURN_TOL = 460;
-
-interface StrokePt {
-  x: number;
-  y: number;
-  t: number;
-}
-
-function PointerController({
-  disabled,
-  onShot,
-  onSwitch,
-  canSwitch,
-}: {
-  disabled: boolean;
-  onShot: (m: GestureMetrics) => void;
-  onSwitch: () => void;
-  canSwitch: boolean;
-}) {
-  const zoneRef = useRef<HTMLDivElement>(null);
-  const ptsRef = useRef<StrokePt[]>([]);
-  const [trail, setTrail] = useState<{ x: number; y: number }[]>([]);
-  const [active, setActive] = useState(false);
-  const [phase, setPhase] = useState<"idle" | "rise" | "snap">("idle");
-  const [tooShort, setTooShort] = useState(false);
-
-  const analyse = () => {
-    const pts = ptsRef.current;
-    const zone = zoneRef.current;
-    if (!zone || pts.length < 4) return null;
-    const Hh = zone.clientHeight || 1;
-
-    // sommet = point le plus haut atteint
-    let apex = 0;
-    for (let i = 1; i < pts.length; i++) if (pts[i].y < pts[apex].y) apex = i;
-    if (apex < 2) return null;
-
-    const first = pts[0];
-    const top = pts[apex];
-    const riseDt = Math.max(0.05, (top.t - first.t) / 1000);
-    const riseDy = (first.y - top.y) / Hh;
-    if (riseDy < 0.25) return null;
-    const strokeSpeed = riseDy / riseDt;
-
-    // axe : dérive horizontale pendant la montée
-    let maxDev = 0;
-    for (let i = 0; i <= apex; i++) maxDev = Math.max(maxDev, Math.abs(pts[i].x - first.x));
-    const lateralDeg = (Math.atan2(top.x - first.x, Math.max(20, first.y - top.y)) * 180) / Math.PI;
-    const axis = clamp(1 - maxDev / (Hh * 0.35));
-
-    // cassé : rupture de direction après le sommet
-    const dirAt = (i0: number, i1: number) => {
-      const a = pts[Math.max(0, i0)];
-      const b = pts[Math.min(pts.length - 1, i1)];
-      return { x: b.x - a.x, y: b.y - a.y, dt: Math.max(16, b.t - a.t) };
-    };
-    const before = dirAt(apex - 3, apex);
-    const after = dirAt(apex, pts.length - 1);
-    const mag = (v: { x: number; y: number }) => Math.hypot(v.x, v.y) || 1;
-    const cosang = (before.x * after.x + before.y * after.y) / (mag(before) * mag(after));
-    const turn = (Math.acos(clamp(cosang, -1, 1)) * 180) / Math.PI;
-    const afterLen = mag(after);
-    const turnRate = afterLen < Hh * 0.05 ? 0 : (turn / after.dt) * 1000;
-
-    const tailDt = (pts[pts.length - 1].t - top.t) / 1000;
-    const timing = clamp(1 - Math.abs(tailDt - 0.13) / 0.26);
-
-    return {
-      push: clamp((strokeSpeed - IDEAL_STROKE) / STROKE_TOL, -1, 1),
-      snap: clamp((turnRate - IDEAL_TURN) / TURN_TOL, -1, 1),
-      lateral: clamp(lateralDeg / 14, -1, 1),
-      axis,
-      timing,
-      source: "pointer" as const,
-    };
-  };
-
-  const start = (e: React.PointerEvent) => {
-    if (disabled) return;
-    const r = zoneRef.current?.getBoundingClientRect();
-    if (!r) return;
-    setTooShort(false);
-    ptsRef.current = [{ x: e.clientX - r.left, y: e.clientY - r.top, t: performance.now() }];
-    setTrail([{ x: e.clientX - r.left, y: e.clientY - r.top }]);
-    setActive(true);
-    setPhase("rise");
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  };
-
-  const move = (e: React.PointerEvent) => {
-    if (!active) return;
-    const r = zoneRef.current?.getBoundingClientRect();
-    if (!r) return;
-    const p = { x: e.clientX - r.left, y: e.clientY - r.top, t: performance.now() };
-    const pts = ptsRef.current;
-    const last = pts[pts.length - 1];
-    if (Math.hypot(p.x - last.x, p.y - last.y) < 3) return;
-    pts.push(p);
-    if (pts.length > 160) pts.shift();
-    setTrail((prev) => [...prev.slice(-70), { x: p.x, y: p.y }]);
-    let apexY = Infinity;
-    for (const q of pts) apexY = Math.min(apexY, q.y);
-    setPhase(p.y > apexY + 12 ? "snap" : "rise");
-  };
-
-  const end = () => {
-    if (!active) return;
-    setActive(false);
-    setPhase("idle");
-    const m = analyse();
-    setTimeout(() => setTrail([]), 220);
-    setTooShort(!m);
-    if (m) onShot(m);
-  };
-
-  const H = 260;
-  return (
-    <div className="space-y-2">
-      <div
-        ref={zoneRef}
-        onPointerDown={start}
-        onPointerMove={move}
-        onPointerUp={end}
-        onPointerCancel={end}
-        className="relative rounded-2xl overflow-hidden select-none"
-        style={{
-          height: H,
-          touchAction: "none",
-          cursor: disabled ? "default" : "crosshair",
-          background: "var(--bg-card)",
-          border: `1px solid ${active ? "transparent" : "var(--border-card)"}`,
-          outline: active ? "2px solid var(--accent)" : "none",
-          opacity: disabled ? 0.45 : 1,
-        }}
-      >
-        <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: "none" }}>
-          <line x1="50%" y1="12%" x2="50%" y2="88%" stroke="var(--border)" strokeWidth="1" strokeDasharray="4 7" />
-          <circle cx="50%" cy="86%" r="16" fill="none" stroke="var(--border)" strokeWidth="1" />
-          {trail.length > 1 && (
-            <polyline
-              points={trail.map((p) => `${p.x},${p.y}`).join(" ")}
-              fill="none"
-              stroke="var(--accent)"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity="0.85"
-            />
-          )}
-        </svg>
-        <div className="absolute inset-x-0 bottom-0 p-4 text-center">
-          <p className="text-sm font-medium" style={{ color: "var(--text-main)" }}>
-            {phase === "idle"
-              ? tooShort
-                ? "Geste trop court : remonte sur au moins un tiers de la zone."
-                : "Pars du bas, remonte droit, casse net au sommet."
-              : phase === "rise"
-              ? "Monte…"
-              : "Casse !"}
-          </p>
-        </div>
-      </div>
-      {canSwitch && (
-        <button onClick={onSwitch} className="text-xs underline" style={{ color: "var(--text-muted)" }}>
-          Revenir au tir aux capteurs
-        </button>
-      )}
-    </div>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════════════════════
-   6. JEU
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-interface Tally {
-  attempts: number;
-  makes: number;
-  best: number;
-}
 
 const OUTCOME_LABEL: Record<Outcome, string> = {
   swish: "Swish",
@@ -1376,29 +1066,106 @@ const OUTCOME_LABEL: Record<Outcome, string> = {
   miss: "Raté",
 };
 
+interface Tally {
+  attempts: number;
+  makes: number;
+  best: number;
+}
+
+const isMade = (s: SimResult) => s.outcome === "swish" || s.outcome === "made";
+
 function LancerFrancGame({ ctx }: { ctx: RoomContext }) {
   const solo = ctx.role === "solo";
   const isHost = ctx.role === "host" || solo;
 
-  const [mode, setMode] = useState<"motion" | "pointer">("pointer");
+  const who = useMemo<LFIdentity>(
+    () => (typeof window === "undefined" ? { id: "local", label: "Moi" } : getIdentity()),
+    []
+  );
+
   const [diff, setDiff] = useState<Difficulty>(DIFFICULTIES[0]);
   const [shot, setShot] = useState<SimResult | null>(null);
-  const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<SimResult | null>(null);
-  const [stats, setStats] = useState({ attempts: 0, makes: 0, streak: 0, best: 0 });
+  const [toast, setToast] = useState(false);
+  const [streak, setStreak] = useState(0);
+  const [all, setAll] = useState<LFStats>(() =>
+    typeof window === "undefined" ? { makes: 0, attempts: 0, best: 0 } : loadLocalStats(who.id)
+  );
+  const [record, setRecord] = useState<Recordman | null>(null);
   const [tally, setTally] = useState<Record<string, Tally>>({});
-  const [showHelp, setShowHelp] = useState(false);
-  const idRef = useRef(0);
+  const [panel, setPanel] = useState<"none" | "help" | "room">("none");
+  const [boxH, setBoxH] = useState(520);
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  const idRef = useRef(0);
+  const shotRef = useRef<SimResult | null>(null);
+  const committedRef = useRef(0);
+  const streakRef = useRef(0);
+  const allRef = useRef(all);
+  const dirtyRef = useRef(false);
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // ── Tient tout dans l'écran : la zone de jeu occupe la hauteur restante.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const coarse = window.matchMedia?.("(pointer: coarse)").matches;
-    const hasMotion = typeof window.DeviceMotionEvent !== "undefined";
-    if (coarse && hasMotion) setMode("motion");
+    const fit = () => {
+      const el = rootRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const vh = window.visualViewport?.height ?? window.innerHeight;
+      setBoxH(Math.max(340, Math.round(vh - top - 36)));
+    };
+    window.scrollTo(0, 0);
+    const raf = requestAnimationFrame(fit);
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", fit);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", fit);
+      window.removeEventListener("orientationchange", fit);
+    };
   }, []);
 
+  // ── Stats de tout le temps : local d'abord, serveur quand il y a du réseau
+  const flush = useCallback(async () => {
+    clearTimeout(syncTimer.current);
+    if (dirtyRef.current) {
+      const ok = await pushStats(who, allRef.current);
+      if (ok) dirtyRef.current = false;
+    }
+    setRecord(await fetchRecordman(who, allRef.current));
+  }, [who]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const remote = await pullMyStats(who);
+      if (cancelled) return;
+      if (remote) {
+        const merged = mergeStats(allRef.current, remote);
+        if (merged.attempts !== remote.attempts || merged.best !== remote.best) dirtyRef.current = true;
+        allRef.current = merged;
+        setAll(merged);
+        saveLocalStats(who.id, merged);
+      }
+      flush();
+    })();
+    const onHide = () => {
+      if (document.visibilityState === "hidden" && dirtyRef.current) pushStats(who, allRef.current);
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onHide);
+      clearTimeout(syncTimer.current);
+      clearTimeout(toastTimer.current);
+      if (dirtyRef.current) pushStats(who, allRef.current);
+    };
+  }, [who, flush]);
+
+  // ── Concours en salle (multijoueur)
   const recordShot = useCallback(
-    (playerId: string, made: boolean, streak: number) => {
+    (playerId: string, made: boolean, streakNow: number) => {
       setTally((prev) => {
         const e = prev[playerId] ?? { attempts: 0, makes: 0, best: 0 };
         const next = {
@@ -1406,7 +1173,7 @@ function LancerFrancGame({ ctx }: { ctx: RoomContext }) {
           [playerId]: {
             attempts: e.attempts + 1,
             makes: e.makes + (made ? 1 : 0),
-            best: Math.max(e.best, streak),
+            best: Math.max(e.best, streakNow),
           },
         };
         if (isHost) ctx.broadcast({ type: "state", payload: next });
@@ -1419,9 +1186,7 @@ function LancerFrancGame({ ctx }: { ctx: RoomContext }) {
 
   useEffect(() => {
     ctx.onMessage((msg: NetMessage, from?: string) => {
-      if (msg.type === "state" && !isHost) {
-        setTally(msg.payload as Record<string, Tally>);
-      }
+      if (msg.type === "state" && !isHost) setTally(msg.payload as Record<string, Tally>);
       if (msg.type === "move" && isHost && from) {
         const p = msg.payload as { made: boolean; streak?: number };
         recordShot(from, p.made, p.streak ?? 0);
@@ -1430,201 +1195,330 @@ function LancerFrancGame({ ctx }: { ctx: RoomContext }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, recordShot]);
 
+  // ── Résultat d'un tir : compté une seule fois, même si on enchaîne
+  const commit = (s: SimResult) => {
+    if (committedRef.current >= s.id) return;
+    committedRef.current = s.id;
+    const made = isMade(s);
+
+    streakRef.current = made ? streakRef.current + 1 : 0;
+    setStreak(streakRef.current);
+
+    const next: LFStats = {
+      makes: allRef.current.makes + (made ? 1 : 0),
+      attempts: allRef.current.attempts + 1,
+      best: Math.max(allRef.current.best, streakRef.current),
+    };
+    allRef.current = next;
+    dirtyRef.current = true;
+    setAll(next);
+    saveLocalStats(who.id, next);
+    clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(flush, 2500);
+
+    if (!solo) {
+      if (isHost) recordShot(ctx.myId, made, streakRef.current);
+      else ctx.send({ type: "move", payload: { made, streak: streakRef.current }, from: ctx.myId });
+    }
+
+    buzz(made ? [10, 30, 10] : 30);
+    setLast(s);
+    setToast(true);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(false), 2600);
+  };
+
+  // ── Chaque geste = un nouveau tir (le précédent est validé immédiatement s'il volait encore)
   const handleGesture = (m: GestureMetrics) => {
-    if (busy) return;
+    if (shotRef.current) commit(shotRef.current);
     const { params, grade } = buildShot(m, diff);
     const sim = simulate(params);
     idRef.current += 1;
-    setLast(null);
-    setShot({ ...sim, id: idRef.current, grade });
-    setBusy(true);
+    const full: SimResult = { ...sim, id: idRef.current, grade };
+    shotRef.current = full;
+    setToast(false);
+    setShot(full);
   };
 
-  const handleDone = (s: SimResult) => {
-    const made = s.outcome === "swish" || s.outcome === "made";
-    let nextStreak = 0;
-    setStats((prev) => {
-      nextStreak = made ? prev.streak + 1 : 0;
-      return {
-        attempts: prev.attempts + 1,
-        makes: prev.makes + (made ? 1 : 0),
-        streak: nextStreak,
-        best: Math.max(prev.best, nextStreak),
-      };
-    });
-    if (!solo) {
-      if (isHost) recordShot(ctx.myId, made, nextStreak);
-      else ctx.send({ type: "move", payload: { made, streak: nextStreak }, from: ctx.myId });
-    }
-    buzz(made ? [10, 30, 10] : 30);
-    setLast(s);
-    setBusy(false);
-  };
+  const sensor = useShotSensor(handleGesture);
 
-  const pct = stats.attempts > 0 ? Math.round((stats.makes / stats.attempts) * 100) : 0;
-  const made = last && (last.outcome === "swish" || last.outcome === "made");
+  const pct = all.attempts > 0 ? Math.round((all.makes / all.attempts) * 100) : 0;
+  const made = last ? isMade(last) : false;
+  const ready = sensor.perm === "granted";
+
+  const chipText =
+    sensor.hint ??
+    (sensor.stage === "rise"
+      ? "Monte…"
+      : sensor.stage === "snap"
+      ? "Casse le poignet !"
+      : sensor.aligned
+      ? "Prêt : monte, puis casse le poignet"
+      : "Tiens le téléphone droit, écran vers toi");
+  const chipOk = sensor.stage !== "wait" || sensor.aligned;
 
   return (
-    <div className="space-y-4">
+    <div ref={rootRef} className="flex flex-col gap-2" style={{ height: boxH }}>
       <style>{`
         @keyframes lf-pop { 0%{opacity:0;transform:translateY(6px) scale(.94)} 60%{opacity:1;transform:translateY(0) scale(1.02)} 100%{opacity:1;transform:none} }
         .lf-pop { animation: lf-pop .32s cubic-bezier(.2,.8,.3,1) both; }
         @media (prefers-reduced-motion: reduce) { .lf-pop { animation: none; } }
       `}</style>
 
-      <div className="relative">
-        <CourtCanvas shot={shot} onDone={handleDone} aimHint={0} />
+      {/* ── Terrain ── */}
+      <div
+        className="relative flex-1 min-h-0 rounded-2xl overflow-hidden"
+        style={{ border: "1px solid var(--border-card)" }}
+      >
+        <CourtCanvas
+          shot={shot}
+          onDone={(s) => {
+            commit(s);
+          }}
+        />
 
-        {/* HUD série */}
-        {stats.streak >= 3 && (
-          <div
-            className="absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-semibold lf-pop"
-            style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "#fff" }}
-          >
-            {stats.streak} d'affilée 🔥
+        {/* commandes discrètes */}
+        <div className="absolute top-2 left-2 right-2 flex items-start justify-between gap-2">
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => setDiff(diff.key === "arcade" ? DIFFICULTIES[1] : DIFFICULTIES[0])}
+              className="px-2.5 py-1 rounded-full text-[11px] font-medium backdrop-blur"
+              style={{ background: "rgba(8,12,22,0.7)", color: "#E9EEF8", border: "1px solid rgba(255,255,255,.12)" }}
+            >
+              {diff.label}
+            </button>
+            <button
+              onClick={() => setPanel(panel === "help" ? "none" : "help")}
+              aria-label="Comment tirer ?"
+              className="w-7 h-7 rounded-full text-xs font-semibold backdrop-blur"
+              style={{ background: "rgba(8,12,22,0.7)", color: "#E9EEF8", border: "1px solid rgba(255,255,255,.12)" }}
+            >
+              ?
+            </button>
+            {!solo && (
+              <button
+                onClick={() => setPanel(panel === "room" ? "none" : "room")}
+                aria-label="Classement de la partie"
+                className="w-7 h-7 rounded-full text-xs backdrop-blur"
+                style={{ background: "rgba(8,12,22,0.7)", color: "#E9EEF8", border: "1px solid rgba(255,255,255,.12)" }}
+              >
+                👥
+              </button>
+            )}
+          </div>
+          {streak >= 3 && (
+            <div
+              className="px-2.5 py-1 rounded-full text-xs font-semibold lf-pop"
+              style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "#fff" }}
+            >
+              {streak} d'affilée 🔥
+            </div>
+          )}
+        </div>
+
+        {/* état du capteur */}
+        {ready && (
+          <div className="absolute top-11 inset-x-0 flex justify-center px-3 pointer-events-none">
+            <div
+              className="rounded-xl px-3 py-1.5 text-center backdrop-blur"
+              style={{
+                background: "rgba(8,12,22,0.72)",
+                border: `1px solid ${chipOk ? "rgba(74,222,128,.5)" : "rgba(251,191,36,.45)"}`,
+                minWidth: 190,
+              }}
+            >
+              <p className="text-xs font-medium" style={{ color: chipOk ? "#86efac" : "#fcd34d" }}>
+                {chipText}
+              </p>
+              <div className="h-[3px] rounded-full overflow-hidden mt-1.5" style={{ background: "rgba(255,255,255,.1)" }}>
+                <div
+                  ref={sensor.gaugeRef}
+                  className="h-full origin-left"
+                  style={{
+                    background: "linear-gradient(90deg,var(--accent),var(--accent2))",
+                    transform: "scaleX(0)",
+                    transition: "transform .06s linear",
+                  }}
+                />
+              </div>
+            </div>
           </div>
         )}
 
-        {last && (
-          <div className="absolute inset-x-0 bottom-3 flex justify-center px-3">
+        {/* résultat du tir */}
+        {last && toast && (
+          <div className="absolute inset-x-0 bottom-3 flex justify-center px-3 pointer-events-none">
             <div
               className="lf-pop rounded-xl px-4 py-2.5 text-center backdrop-blur"
               style={{
-                background: "rgba(8,12,22,0.78)",
+                background: "rgba(8,12,22,0.8)",
                 border: `1px solid ${made ? "rgba(74,222,128,.55)" : "rgba(248,113,113,.45)"}`,
-                minWidth: 200,
+                minWidth: 220,
               }}
             >
-              <p
-                className="font-display text-lg leading-none"
-                style={{ color: made ? "#4ade80" : "#f87171" }}
-              >
+              <p className="font-display text-lg leading-none" style={{ color: made ? "#4ade80" : "#f87171" }}>
                 {OUTCOME_LABEL[last.outcome]}
               </p>
               <p className="text-[11px] mt-1" style={{ color: "rgba(233,238,248,.72)" }}>
                 {last.detail}
               </p>
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <Bar label="Poussée" v={last.grade.push} />
+                <Bar label="Poignet" v={last.grade.snap} />
+                <Bar label="Axe" v={last.grade.axis} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* aide */}
+        {panel === "help" && (
+          <ol
+            onClick={() => setPanel("none")}
+            className="absolute inset-x-3 top-12 rounded-2xl p-4 space-y-2 text-sm lf-pop backdrop-blur"
+            style={{ background: "rgba(8,12,22,0.92)", border: "1px solid var(--border-card)", color: "rgba(233,238,248,.72)" }}
+          >
+            <li>
+              <span style={{ color: "#E9EEF8" }}>Tiens-le droit.</span> Écran vers toi, comme un ballon devant le visage. Le voyant passe à « Prêt ».
+            </li>
+            <li>
+              <span style={{ color: "#E9EEF8" }}>Monte.</span> Une poussée nette vers le haut : elle donne la distance.
+            </li>
+            <li>
+              <span style={{ color: "#E9EEF8" }}>Casse le poignet.</span> Bascule le haut du téléphone vers l'avant d'un coup sec. Trop peu : tir tendu. Trop fort : cloche trop haute.
+            </li>
+            <li className="text-[11px] pt-1">Chaque geste lance un nouveau tir. Touche pour fermer.</li>
+          </ol>
+        )}
+
+        {/* classement de la partie */}
+        {panel === "room" && !solo && (
+          <div
+            onClick={() => setPanel("none")}
+            className="absolute inset-x-3 top-12 rounded-2xl p-3 space-y-2 lf-pop backdrop-blur"
+            style={{ background: "rgba(8,12,22,0.92)", border: "1px solid var(--border-card)" }}
+          >
+            <p className="text-[11px]" style={{ color: "var(--text-sub)" }}>
+              Concours de lancers francs (cette partie)
+            </p>
+            {ctx.players
+              .map((p) => ({ p, t: tally[p.id] ?? { attempts: 0, makes: 0, best: 0 } }))
+              .sort((a, b) => b.t.makes - a.t.makes || b.t.best - a.t.best)
+              .map(({ p, t }, i) => (
+                <div key={p.id} className="flex items-center justify-between text-sm">
+                  <span style={{ color: "#E9EEF8" }}>
+                    {i === 0 && t.makes > 0 ? "🏆 " : ""}
+                    {p.name}
+                    {p.id === ctx.myId ? " (toi)" : ""}
+                  </span>
+                  <span style={{ color: "rgba(233,238,248,.6)" }}>
+                    {t.makes}/{t.attempts}
+                    {t.best > 1 ? ` · série ${t.best}` : ""}
+                  </span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {/* autorisation / capteurs indisponibles */}
+        {!ready && (
+          <div
+            className="absolute inset-0 flex items-center justify-center p-6"
+            style={{ background: "rgba(5,8,15,0.8)" }}
+          >
+            <div className="text-center space-y-3 max-w-xs">
+              <p className="text-3xl">📱🏀</p>
+              {sensor.perm === "nosensor" ? (
+                <>
+                  <p className="text-sm font-medium" style={{ color: "#E9EEF8" }}>
+                    Aucun capteur de mouvement détecté.
+                  </p>
+                  <p className="text-xs" style={{ color: "rgba(233,238,248,.6)" }}>
+                    Ce jeu se joue en bougeant le téléphone. Ouvre-le depuis ton mobile (Chrome ou Safari à jour, en HTTPS).
+                  </p>
+                </>
+              ) : sensor.perm === "denied" ? (
+                <>
+                  <p className="text-sm font-medium" style={{ color: "#E9EEF8" }}>
+                    Accès aux capteurs refusé.
+                  </p>
+                  <p className="text-xs" style={{ color: "rgba(233,238,248,.6)" }}>
+                    Autorise « Mouvement et orientation » pour ce site dans les réglages du navigateur, puis réessaie.
+                  </p>
+                  <button
+                    onClick={sensor.enable}
+                    className="w-full py-3 rounded-xl text-sm font-semibold active:scale-95 transition-transform"
+                    style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "#fff" }}
+                  >
+                    Réessayer
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium" style={{ color: "#E9EEF8" }}>
+                    Le téléphone devient le ballon : monte, puis casse le poignet.
+                  </p>
+                  <button
+                    onClick={sensor.enable}
+                    disabled={sensor.perm === "checking"}
+                    className="w-full py-3 rounded-xl text-sm font-semibold active:scale-95 transition-transform disabled:opacity-40"
+                    style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "#fff" }}
+                  >
+                    Activer les capteurs
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
-        <Stat label="Tirs" value={stats.attempts} />
-        <Stat label="Réussite" value={`${pct}%`} />
-        <Stat label="Série" value={stats.streak} />
-        <Stat label="Record" value={stats.best} />
-      </div>
-
-      {last && (
-        <div
-          className="rounded-2xl p-3 grid grid-cols-3 gap-3"
-          style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)" }}
-        >
-          <Bar label="Poussée" v={last.grade.push} />
-          <Bar label="Poignet" v={last.grade.snap} />
-          <Bar label="Axe" v={last.grade.axis} />
-        </div>
-      )}
-
-      {mode === "motion" ? (
-        <MotionController disabled={busy} onShot={handleGesture} onFallback={() => setMode("pointer")} />
-      ) : (
-        <PointerController
-          disabled={busy}
-          onShot={handleGesture}
-          canSwitch={typeof window !== "undefined" && typeof window.DeviceMotionEvent !== "undefined"}
-          onSwitch={() => setMode("motion")}
+      {/* ── Stats de tout le temps ── */}
+      <div className="grid grid-cols-3 gap-2 shrink-0">
+        <StatTile label="Réussis / tentés" value={`${all.makes}/${all.attempts}`} sub={`${pct}%`} />
+        <StatTile label="Série max" value={String(all.best)} sub={streak > 0 ? `en cours : ${streak}` : "—"} />
+        <StatTile
+          label="Recordman"
+          value={record ? record.label : "—"}
+          sub={
+            record
+              ? `${Math.round(record.pct * 100)}% · série ${record.best}`
+              : `min. ${MIN_ATTEMPTS_RECORD} tirs`
+          }
+          small
         />
-      )}
-
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: "var(--bg-input)" }}>
-          {DIFFICULTIES.map((d) => (
-            <button
-              key={d.key}
-              onClick={() => setDiff(d)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-              style={
-                d.key === diff.key
-                  ? { background: "var(--accent)", color: "#fff" }
-                  : { color: "var(--text-muted)" }
-              }
-            >
-              {d.label}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={() => setShowHelp((v) => !v)}
-          className="text-xs underline"
-          style={{ color: "var(--text-muted)" }}
-        >
-          {showHelp ? "Masquer le geste" : "Comment tirer ?"}
-        </button>
       </div>
-
-      {showHelp && (
-        <ol
-          className="rounded-2xl p-4 space-y-2 text-sm lf-pop"
-          style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)", color: "var(--text-muted)" }}
-        >
-          <li>
-            <span style={{ color: "var(--text-main)" }}>Tiens l'axe.</span>{" "}
-            {mode === "motion"
-              ? "Téléphone droit, écran vers toi : la bulle doit rester au centre, sinon le ballon part sur le côté."
-              : "Le tracé doit suivre la ligne centrale ; toute dérive latérale se retrouve sur le tir."}
-          </li>
-          <li>
-            <span style={{ color: "var(--text-main)" }}>Monte.</span>{" "}
-            {mode === "motion"
-              ? "Une poussée nette vers le haut : c'est elle qui donne la distance."
-              : "Un trait vers le haut, franc et régulier : c'est lui qui donne la distance."}
-          </li>
-          <li>
-            <span style={{ color: "var(--text-main)" }}>Casse le poignet.</span>{" "}
-            {mode === "motion"
-              ? "Au sommet, bascule le téléphone vers l'avant d'un coup sec. Trop peu : tir tendu qui tape le cercle. Trop fort : cloche trop haute et trop courte."
-              : "Au sommet, rupture nette de direction. Trop peu : tir tendu. Trop fort : cloche trop haute."}
-          </li>
-        </ol>
-      )}
-
-      {!solo && (
-        <div className="rounded-2xl p-3 space-y-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)" }}>
-          <p className="text-[11px]" style={{ color: "var(--text-sub)" }}>
-            Concours de lancers francs
-          </p>
-          {ctx.players
-            .map((p) => ({ p, t: tally[p.id] ?? { attempts: 0, makes: 0, best: 0 } }))
-            .sort((a, b) => b.t.makes - a.t.makes || b.t.best - a.t.best)
-            .map(({ p, t }, i) => (
-              <div key={p.id} className="flex items-center justify-between text-sm">
-                <span style={{ color: "var(--text-main)" }}>
-                  {i === 0 && t.makes > 0 ? "🏆 " : ""}
-                  {p.name}
-                  {p.id === ctx.myId ? " (toi)" : ""}
-                </span>
-                <span style={{ color: "var(--text-muted)" }}>
-                  {t.makes}/{t.attempts}
-                  {t.best > 1 ? ` · série ${t.best}` : ""}
-                </span>
-              </div>
-            ))}
-        </div>
-      )}
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
+function StatTile({
+  label,
+  value,
+  sub,
+  small,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  small?: boolean;
+}) {
   return (
-    <div className="text-center rounded-xl py-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)" }}>
-      <p className="font-display text-xl leading-none" style={{ color: "var(--accent)" }}>
+    <div
+      className="text-center rounded-xl py-2 px-1 min-w-0"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)" }}
+    >
+      <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+        {label}
+      </p>
+      <p
+        className={`font-display leading-tight truncate ${small ? "text-base" : "text-xl"}`}
+        style={{ color: "var(--accent)" }}
+      >
         {value}
       </p>
-      <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>
-        {label}
+      <p className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>
+        {sub}
       </p>
     </div>
   );
@@ -1635,12 +1529,12 @@ function Bar({ label, v }: { label: string; v: number }) {
   const col = pct > 80 ? "#4ade80" : pct > 55 ? "var(--accent)" : "#f87171";
   return (
     <div className="space-y-1">
-      <div className="flex justify-between text-[11px]">
-        <span style={{ color: "var(--text-muted)" }}>{label}</span>
-        <span style={{ color: "var(--text-main)" }}>{pct}</span>
+      <div className="flex justify-between text-[10px]">
+        <span style={{ color: "rgba(233,238,248,.6)" }}>{label}</span>
+        <span style={{ color: "#E9EEF8" }}>{pct}</span>
       </div>
-      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-input)" }}>
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: col, transition: "width .4s" }} />
+      <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,.1)" }}>
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: col }} />
       </div>
     </div>
   );

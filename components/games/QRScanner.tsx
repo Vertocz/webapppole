@@ -8,28 +8,80 @@ interface Props {
   onCancel: () => void;
 }
 
+function cameraErrorMessage(e: unknown): string {
+  if (typeof window !== "undefined" && !window.isSecureContext) {
+    return "La caméra exige une connexion sécurisée (HTTPS). Ouvre le site en https://.";
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return "Ce navigateur ne permet pas d'accéder à la caméra. Essaie Chrome ou Safari à jour.";
+  }
+  const name = (e as { name?: string })?.name;
+  switch (name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Accès à la caméra refusé. Autorise la caméra pour ce site dans les réglages du navigateur, puis réessaie.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "Aucune caméra détectée sur cet appareil.";
+    case "NotReadableError":
+    case "AbortError":
+      return "La caméra est utilisée par une autre application. Ferme-la et réessaie.";
+    default:
+      return `Impossible d'ouvrir la caméra${name ? ` (${name})` : ""}.`;
+  }
+}
+
 export default function QRScanner({ onScan, onCancel }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState("Ouverture de la caméra…");
+
+  // Garde toujours la dernière version de onScan SANS relancer la caméra
+  const onScanRef = useRef(onScan);
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
     let raf = 0;
     let stopped = false;
+    let lastScan = 0;
 
     async function start() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("unsupported");
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+          });
+        } catch (e) {
+          // Repli : n'importe quelle caméra
+          if ((e as { name?: string })?.name === "OverconstrainedError") {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          } else {
+            throw e;
+          }
         }
+        if (stopped) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          await video.play();
+        }
+        setStatus("Caméra active — cadre le QR code, bien net et en entier.");
         tick();
-      } catch {
-        setError("Impossible d'accéder à la caméra. Vérifie les autorisations.");
+      } catch (e) {
+        setStatus("");
+        setError(cameraErrorMessage(e));
       }
     }
 
@@ -37,17 +89,27 @@ export default function QRScanner({ onScan, onCancel }: Props) {
       if (stopped) return;
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      if (video && canvas && video.readyState === video.HAVE_ENOUGH_DATA) {
+      const now = performance.now();
+      // ~8 analyses/s : jsQR est lourd, inutile de le lancer à chaque frame
+      if (
+        video &&
+        canvas &&
+        video.readyState === video.HAVE_ENOUGH_DATA &&
+        now - lastScan > 120
+      ) {
+        lastScan = now;
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        const ctx = canvas.getContext("2d");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
         if (ctx) {
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(imageData.data, imageData.width, imageData.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: "dontInvert",
+          });
           if (code?.data) {
             stopped = true;
-            onScan(code.data);
+            onScanRef.current(code.data);
             return;
           }
         }
@@ -61,7 +123,7 @@ export default function QRScanner({ onScan, onCancel }: Props) {
       cancelAnimationFrame(raf);
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, [onScan]);
+  }, []);
 
   return (
     <div className="space-y-3">
@@ -73,6 +135,11 @@ export default function QRScanner({ onScan, onCancel }: Props) {
         />
       </div>
       <canvas ref={canvasRef} className="hidden" />
+      {status && !error && (
+        <p className="text-xs text-center" style={{ color: "var(--text-muted)" }}>
+          {status}
+        </p>
+      )}
       {error && (
         <p className="text-sm" style={{ color: "#f87171" }}>
           {error}

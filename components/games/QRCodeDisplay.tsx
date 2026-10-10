@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 
-export default function QRCodeDisplay({ data, size = 240 }: { data: string; size?: number }) {
+export default function QRCodeDisplay({ data, size = 320 }: { data: string; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState(false);
 
@@ -12,7 +12,7 @@ export default function QRCodeDisplay({ data, size = 240 }: { data: string; size
     setError(false);
     QRCode.toCanvas(canvasRef.current, data, {
       width: size,
-      margin: 1,
+      margin: 2,
       errorCorrectionLevel: "L",
     }).catch(() => setError(true));
   }, [data, size]);
