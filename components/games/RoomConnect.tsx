@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { HostRoom, ClientRoom, NetMessage, PlayerInfo } from "@/lib/p2pRoom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { HostRoom, ClientRoom, NetMessage, PlayerInfo, type CandidateInfo, type PeerStatus } from "@/lib/p2pRoom";
 import QRCodeDisplay from "./QRCodeDisplay";
 import QRScanner from "./QRScanner";
 
@@ -22,6 +22,31 @@ type Step =
   | "join-scan-offer"
   | "join-waiting";
 
+/** Petit diagnostic réseau : aide à comprendre pourquoi une connexion ne passe pas. */
+function NetHint({ info }: { info: CandidateInfo | null }) {
+  if (!info) return null;
+  if (info.total === 0) {
+    return (
+      <p className="text-[11px]" style={{ color: "#fbbf24" }}>
+        Aucune adresse réseau trouvée : active le wifi ou le partage de connexion, puis recommence.
+      </p>
+    );
+  }
+  if (info.real === 0) {
+    return (
+      <p className="text-[11px]" style={{ color: "#fbbf24" }}>
+        Ton navigateur masque l&apos;adresse du téléphone. Autorise la caméra pour ce site : la connexion sera plus
+        fiable.
+      </p>
+    );
+  }
+  return (
+    <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+      Réseau local détecté ✓
+    </p>
+  );
+}
+
 export default function RoomConnect({
   gameName,
   minPlayers = 1,
@@ -39,11 +64,35 @@ export default function RoomConnect({
   const [pendingPeerId, setPendingPeerId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [myId, setMyId] = useState("host");
+  const [guests, setGuests] = useState<{ peerId: string; name: string; status: PeerStatus }[]>([]);
+  const [clientState, setClientState] = useState<"waiting" | "connecting" | "failed">("waiting");
+  const [candInfo, setCandInfo] = useState<CandidateInfo | null>(null);
   const [error, setError] = useState("");
 
   const hostRef = useRef<HostRoom | null>(null);
   const clientRef = useRef<ClientRoom | null>(null);
   const messageHandlers = useRef<((msg: NetMessage, from?: string) => void)[]>([]);
+
+  // Hôte : la connexion s'ouvre APRÈS le scan de la réponse. On suit donc l'état en direct
+  // (avant, la liste était figée au moment du scan et ne montrait jamais l'invité).
+  useEffect(() => {
+    const host = hostRef.current;
+    if (mode !== "host" || !host) return;
+    const refresh = () => {
+      setPlayers([...host.players]);
+      setGuests(host.guests());
+    };
+    refresh();
+    return host.subscribe(refresh);
+  }, [mode]);
+
+  // Client : état de la connexion vers l'hôte
+  useEffect(() => {
+    const client = clientRef.current;
+    if (mode !== "client" || !client) return;
+    setClientState(client.state);
+    return client.subscribe(() => setClientState(client.state));
+  }, [mode, step]);
 
   const registerHandler = useCallback((cb: (msg: NetMessage, from?: string) => void) => {
     messageHandlers.current.push(cb);
@@ -84,7 +133,8 @@ export default function RoomConnect({
     setError("");
     try {
       const guestHint = `Joueur ${hostRef.current.players.length + 1}`;
-      const { peerId, qrPayload } = await hostRef.current.createInvite(guestHint);
+      const { peerId, qrPayload, info } = await hostRef.current.createInvite(guestHint);
+      setCandInfo(info);
       setPendingPeerId(peerId);
       setInvitePayload(qrPayload);
       setStep("host-lobby");
@@ -110,6 +160,7 @@ export default function RoomConnect({
         messageHandlers.current.forEach((h) => h(msg));
       });
       setInvitePayload(answerPayload);
+      setCandInfo(clientRef.current.info);
       setStep("join-waiting");
     } catch {
       setError("QR invalide ou expiré, réessaie.");
@@ -214,6 +265,11 @@ export default function RoomConnect({
           >
             Continuer
           </button>
+          {mode === "host" && (
+            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              Le navigateur va demander la caméra : elle sert à scanner les QR et à établir la connexion locale.
+            </p>
+          )}
         </div>
       )}
 
@@ -227,6 +283,7 @@ export default function RoomConnect({
               <div className="flex justify-center">
                 <QRCodeDisplay data={invitePayload} />
               </div>
+              <NetHint info={candInfo} />
               <button
                 onClick={() => setStep("host-scan-answer")}
                 className="w-full py-3 rounded-xl font-medium text-sm"
@@ -248,6 +305,43 @@ export default function RoomConnect({
                 style={{ background: "var(--bg-input)", color: "var(--text-main)" }}
               >
                 {p.name}
+              </div>
+            ))}
+            {guests.map((g) => (
+              <div
+                key={g.peerId}
+                className="px-3 py-2 rounded-lg text-sm space-y-1.5"
+                style={{
+                  background: "var(--bg-input)",
+                  border: `1px solid ${g.status === "failed" ? "rgba(248,113,113,.5)" : "var(--border)"}`,
+                  color: "var(--text-main)",
+                }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span>{g.name}</span>
+                  <span className="text-xs" style={{ color: g.status === "failed" ? "#f87171" : "var(--text-muted)" }}>
+                    {g.status === "failed" ? "Échec" : "Connexion en cours…"}
+                  </span>
+                </div>
+                {g.status === "failed" && (
+                  <div className="space-y-2">
+                    <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                      Les deux téléphones doivent être sur le même réseau (le partage de connexion de l&apos;un
+                      d&apos;eux, wifi sans « isolation des appareils »). Scannez les deux QR rapidement, sans laisser
+                      l&apos;écran s&apos;éteindre, puis réessayez.
+                    </p>
+                    <button
+                      onClick={() => {
+                        hostRef.current?.dismiss(g.peerId);
+                        inviteNext();
+                      }}
+                      className="w-full py-2 rounded-lg text-xs font-medium"
+                      style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
+                    >
+                      Réessayer avec un nouveau QR
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -294,9 +388,32 @@ export default function RoomConnect({
           <div className="flex justify-center">
             <QRCodeDisplay data={invitePayload} />
           </div>
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            En attente de connexion…
+          <NetHint info={candInfo} />
+          <p
+            className="text-xs"
+            style={{ color: clientState === "failed" ? "#f87171" : "var(--text-muted)" }}
+          >
+            {clientState === "failed"
+              ? "La connexion a échoué. Vérifie que vous êtes sur le même réseau, puis recommence."
+              : clientState === "connecting"
+              ? "Connexion à l'hôte en cours…"
+              : "En attente que l'hôte scanne ce QR. Dès que c'est fait, la partie démarre ici."}
           </p>
+          {clientState === "failed" && (
+            <button
+              onClick={() => {
+                clientRef.current = new ClientRoom();
+                setInvitePayload(null);
+                setClientState("waiting");
+                setStep("join-scan-offer");
+                setMode("client");
+              }}
+              className="w-full py-2.5 rounded-xl text-sm font-medium"
+              style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
+            >
+              Recommencer
+            </button>
+          )}
         </div>
       )}
 

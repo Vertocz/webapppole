@@ -122,13 +122,82 @@ function waitIceComplete(pc: RTCPeerConnection): Promise<void> {
   });
 }
 
+export interface CandidateInfo {
+  total: number;
+  /** adresses masquées par le navigateur (xxxx.local) : le plus souvent la cause d'un échec sur hotspot */
+  hidden: number;
+  /** vraies adresses IP locales */
+  real: number;
+}
+
+/** Compte les candidats réseau d'une SDP, pour diagnostiquer une connexion qui n'aboutit pas. */
+export function summarizeCandidates(sdp?: string | null): CandidateInfo {
+  const info: CandidateInfo = { total: 0, hidden: 0, real: 0 };
+  for (const l of (sdp ?? "").split(/\r?\n/)) {
+    if (!l.startsWith("a=candidate")) continue;
+    info.total++;
+    const addr = l.split(" ")[4] ?? "";
+    if (addr.endsWith(".local")) info.hidden++;
+    else info.real++;
+  }
+  return info;
+}
+
+/**
+ * Chrome et Safari masquent l'IP locale (xxxx.local) tant que la page n'a pas
+ * accès à la caméra. Sur un hotspot, cette résolution échoue souvent : la
+ * connexion n'aboutit jamais. On ouvre donc brièvement la caméra pendant la
+ * collecte des candidats pour exposer les vraies adresses. Refus = on continue.
+ */
+async function unlockLocalIps(): Promise<() => void> {
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) return () => {};
+    const st = await navigator.mediaDevices.getUserMedia({ video: true });
+    return () => st.getTracks().forEach((t) => t.stop());
+  } catch {
+    return () => {};
+  }
+}
+
+export type PeerStatus = "connecting" | "connected" | "failed";
+const CONNECT_TIMEOUT_MS = 25000;
+
 type MessageHandler = (msg: NetMessage, fromPeerId: string) => void;
 
 // ─── Hôte : gère plusieurs connexions clients en étoile ───────────────────────
 export class HostRoom {
   peers = new Map<string, { pc: RTCPeerConnection; dc: RTCDataChannel; name: string }>();
   players: PlayerInfo[] = [{ id: "host", name: "Hôte" }];
+  /** invités dont la réponse a été scannée mais qui ne sont pas (encore) connectés */
+  status = new Map<string, PeerStatus>();
   private handlers: MessageHandler[] = [];
+  private listeners = new Set<() => void>();
+
+  subscribe(cb: () => void): () => void {
+    this.listeners.add(cb);
+    return () => this.listeners.delete(cb);
+  }
+
+  private notify() {
+    this.listeners.forEach((f) => f());
+  }
+
+  /** Invités en cours de connexion ou en échec (hors joueurs déjà connectés) */
+  guests(): { peerId: string; name: string; status: PeerStatus }[] {
+    const out: { peerId: string; name: string; status: PeerStatus }[] = [];
+    for (const [id, st] of this.status) {
+      if (st === "connected") continue;
+      out.push({ peerId: id, name: this.peers.get(id)?.name ?? "Joueur", status: st });
+    }
+    return out;
+  }
+
+  dismiss(peerId: string) {
+    this.peers.get(peerId)?.pc.close();
+    this.peers.delete(peerId);
+    this.status.delete(peerId);
+    this.notify();
+  }
 
   onMessage(cb: MessageHandler) {
     this.handlers.push(cb);
@@ -147,23 +216,41 @@ export class HostRoom {
   }
 
   /** Démarre l'invitation d'un nouveau joueur : renvoie le payload à afficher en QR */
-  async createInvite(guestNameHint: string): Promise<{ peerId: string; qrPayload: string }> {
+  async createInvite(
+    guestNameHint: string
+  ): Promise<{ peerId: string; qrPayload: string; info: CandidateInfo }> {
     const peerId = newId();
     const pc = new RTCPeerConnection(RTC_CONFIG);
     const dc = pc.createDataChannel("game");
-    this.setupDataChannel(peerId, dc, guestNameHint);
+    this.setupDataChannel(peerId, dc);
     this.peers.set(peerId, { pc, dc, name: guestNameHint });
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await waitIceComplete(pc);
+    const onState = () => {
+      if (pc.connectionState === "failed" || pc.iceConnectionState === "failed") {
+        if (this.status.get(peerId) === "connecting") {
+          this.status.set(peerId, "failed");
+          this.notify();
+        }
+      }
+    };
+    pc.addEventListener("connectionstatechange", onState);
+    pc.addEventListener("iceconnectionstatechange", onState);
+
+    const release = await unlockLocalIps();
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await waitIceComplete(pc);
+    } finally {
+      release();
+    }
 
     const qrPayload = await encodePayload({
       kind: "offer",
       peerId,
       sdp: slimSdp(pc.localDescription),
     });
-    return { peerId, qrPayload };
+    return { peerId, qrPayload, info: summarizeCandidates(pc.localDescription?.sdp) };
   }
 
   /** Termine l'invitation une fois la réponse (QR scanné) du joueur reçue */
@@ -174,16 +261,29 @@ export class HostRoom {
     const entry = this.peers.get(peerId);
     if (!entry) throw new Error("Invitation inconnue ou expirée");
     if (decoded.name) entry.name = decoded.name;
+    this.status.set(peerId, "connecting");
+    this.notify();
     await entry.pc.setRemoteDescription(decoded.sdp);
+    // Pas de connexion au bout d'un moment : on le dit au lieu de rester muet
+    setTimeout(() => {
+      if (this.status.get(peerId) === "connecting") {
+        this.status.set(peerId, "failed");
+        this.notify();
+      }
+    }, CONNECT_TIMEOUT_MS);
   }
 
-  private setupDataChannel(peerId: string, dc: RTCDataChannel, name: string) {
+  private setupDataChannel(peerId: string, dc: RTCDataChannel) {
     dc.onopen = () => {
+      // le nom réel du joueur arrive avec sa réponse (completeInvite), pas à la création
+      const name = this.peers.get(peerId)?.name ?? "Joueur";
       if (!this.players.find((p) => p.id === peerId)) {
         this.players.push({ id: peerId, name });
       }
+      this.status.set(peerId, "connected");
       dc.send(JSON.stringify({ type: "welcome", you: peerId, players: this.players }));
       this.broadcast({ type: "players", players: this.players }, peerId);
+      this.notify();
     };
     dc.onmessage = (ev) => {
       try {
@@ -196,7 +296,9 @@ export class HostRoom {
     dc.onclose = () => {
       this.players = this.players.filter((p) => p.id !== peerId);
       this.peers.delete(peerId);
+      this.status.delete(peerId);
       this.broadcast({ type: "players", players: this.players });
+      this.notify();
     };
   }
 }
@@ -205,11 +307,33 @@ export class HostRoom {
 export class ClientRoom {
   pc: RTCPeerConnection;
   dc: RTCDataChannel | null = null;
+  info: CandidateInfo = { total: 0, hidden: 0, real: 0 };
+  state: "waiting" | "connecting" | "failed" = "waiting";
   private handlers: ((msg: NetMessage) => void)[] = [];
+  private listeners = new Set<() => void>();
 
   constructor() {
     this.pc = new RTCPeerConnection(RTC_CONFIG);
     this.pc.ondatachannel = (ev) => this.bindChannel(ev.channel);
+    const onState = () => {
+      const next =
+        this.pc.connectionState === "failed" || this.pc.iceConnectionState === "failed"
+          ? "failed"
+          : this.pc.iceConnectionState === "checking" || this.pc.iceConnectionState === "connected"
+          ? "connecting"
+          : "waiting";
+      if (next !== this.state) {
+        this.state = next;
+        this.listeners.forEach((f) => f());
+      }
+    };
+    this.pc.addEventListener("connectionstatechange", onState);
+    this.pc.addEventListener("iceconnectionstatechange", onState);
+  }
+
+  subscribe(cb: () => void): () => void {
+    this.listeners.add(cb);
+    return () => this.listeners.delete(cb);
   }
 
   onMessage(cb: (msg: NetMessage) => void) {
@@ -241,6 +365,7 @@ export class ClientRoom {
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
     await waitIceComplete(this.pc);
+    this.info = summarizeCandidates(this.pc.localDescription?.sdp);
     return encodePayload({
       kind: "answer",
       sdp: slimSdp(this.pc.localDescription),
