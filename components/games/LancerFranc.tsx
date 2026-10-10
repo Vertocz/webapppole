@@ -277,8 +277,8 @@ interface Difficulty {
 }
 
 const DIFFICULTIES: Difficulty[] = [
-  { key: "arcade", label: "Souple", dead: 0.42, power: 0.028, lateral: 4.6, angle: 12 },
-  { key: "pro", label: "Réaliste", dead: 0.17, power: 0.035, lateral: 5.7, angle: 15 },
+  { key: "arcade", label: "Souple", dead: 0.55, power: 0.024, lateral: 3.0, angle: 10 },
+  { key: "pro", label: "Réaliste", dead: 0.25, power: 0.032, lateral: 4.5, angle: 14 },
 ];
 
 /** Bruit gaussien : deux tirs identiques ne donnent jamais exactement le même
@@ -297,7 +297,7 @@ function soften(e: number, dead: number) {
 function buildShot(m: GestureMetrics, d: Difficulty): { params: ShotParams; grade: Grade } {
   const pushE = soften(m.push, d.dead);
   const snapE = soften(m.snap, d.dead);
-  const latE = soften(m.lateral, d.dead * 0.85);
+  const latE = soften(m.lateral, d.dead);
 
   // Le poignet donne l'angle, la montée donne la vitesse. Le tireur compense
   // spontanément une partie de son erreur d'angle : au-delà, la balle est
@@ -308,9 +308,9 @@ function buildShot(m: GestureMetrics, d: Difficulty): { params: ShotParams; grad
   const powerScale = d.power * (pushE > 0 ? 1.3 : 1);
   let speed = idealSpeed(BASE_ANGLE + ANGLE_COMP * (angleDeg - BASE_ANGLE)) * (1 + pushE * powerScale);
   speed *= 1 - 0.006 * (1 - m.timing); // désynchro montée / poignet
-  speed *= 1 + gauss(0.0035); // main humaine
+  speed *= 1 + gauss(0.0025); // main humaine
 
-  const lateralDeg = latE * d.lateral + gauss(0.25 + (1 - m.axis) * 0.9);
+  const lateralDeg = latE * d.lateral + gauss(0.2 + (1 - m.axis) * 0.6);
 
   const spin = 1.5 + 8 * clamp(1 - Math.abs(m.snap)) * clamp(0.45 + 0.55 * m.timing);
 
@@ -803,9 +803,35 @@ const SNAP_TOL = 320;
 const IDEAL_DELAY = 0.11; // s entre fin de montée et cassé
 const DELAY_TOL = 0.22;
 const TARGET_BETA = 74; // téléphone tenu quasi vertical, écran vers soi
-const BETA_TOL = 26;
-const GAMMA_TOL = 14;
+// Entrée « Prêt » : zone confortable. Sortie : zone bien plus large (hystérésis)
+// + délai, pour que le voyant ne clignote pas quand la main bouge un peu.
+const BETA_IN = 34;
+const GAMMA_IN = 26;
+const BETA_OUT = 48;
+const GAMMA_OUT = 38;
+const TILT_LOSS_MS = 350;
 const COOLDOWN_S = 0.8; // ignore le mouvement de retour après un tir
+
+// Biais latéral personnel (ex. droitier dont le geste part toujours à droite) :
+// moyenne glissante du côté où part le geste, retranchée automatiquement.
+const BIAS_KEY = "lf-lateral-bias";
+const BIAS_RATE = 0.3;
+const BIAS_MAX = 0.7;
+function loadBias(): number {
+  try {
+    const v = parseFloat(localStorage.getItem(BIAS_KEY) ?? "0");
+    return Number.isFinite(v) ? clamp(v, -BIAS_MAX, BIAS_MAX) : 0;
+  } catch {
+    return 0;
+  }
+}
+function saveBias(v: number) {
+  try {
+    localStorage.setItem(BIAS_KEY, String(v));
+  } catch {
+    /* ignoré */
+  }
+}
 
 type Perm = "checking" | "ask" | "granted" | "denied" | "nosensor";
 
@@ -843,6 +869,8 @@ function useShotSensor(onShot: (m: GestureMetrics) => void) {
   const gaugeRef = useRef<HTMLDivElement>(null);
   const tiltRef = useRef({ beta: TARGET_BETA, gamma: 0, ok: false });
   const cooldownRef = useRef(0);
+  const tiltLostRef = useRef(0);
+  const biasRef = useRef(0);
   const onShotRef = useRef(onShot);
   onShotRef.current = onShot;
 
@@ -867,6 +895,7 @@ function useShotSensor(onShot: (m: GestureMetrics) => void) {
   // Autorisation : seul iOS demande un clic ; ailleurs les capteurs sont libres.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    biasRef.current = loadBias();
     if (typeof window.DeviceMotionEvent === "undefined") {
       setPerm("nosensor");
       return;
@@ -927,7 +956,16 @@ function useShotSensor(onShot: (m: GestureMetrics) => void) {
     const crossRatio = s.snapPeak > 40 ? clamp(s.cross / s.snapPeak) : 0.5;
     const axis = clamp(1 - meanRoll / 20 - crossRatio * 0.45);
     const lateralRad = Math.atan2(s.vx, Math.max(0.35, s.vy));
-    const lateral = clamp(((lateralRad * 180) / Math.PI) / 5.5 + s.yawDrift / 10, -1, 1);
+    // La rotation autour de l'axe de l'écran pesait trop lourd : elle poussait
+    // systématiquement le tir du même côté. On la garde, mais bien plus légère.
+    const rawLateral = clamp(((lateralRad * 180) / Math.PI) / 5.5 + s.yawDrift / 40, -1.5, 1.5);
+    const lateral = clamp(rawLateral - biasRef.current, -1, 1);
+    biasRef.current = clamp(
+      biasRef.current + BIAS_RATE * (rawLateral - biasRef.current),
+      -BIAS_MAX,
+      BIAS_MAX
+    );
+    saveBias(biasRef.current);
 
     cooldownRef.current = performance.now() / 1000 + COOLDOWN_S;
     reset();
@@ -941,7 +979,23 @@ function useShotSensor(onShot: (m: GestureMetrics) => void) {
     const h = (e: DeviceOrientationEvent) => {
       const beta = e.beta ?? 0;
       const gamma = e.gamma ?? 0;
-      const ok = Math.abs(beta - TARGET_BETA) < BETA_TOL && Math.abs(gamma) < GAMMA_TOL;
+      const db = Math.abs(beta - TARGET_BETA);
+      const dg = Math.abs(gamma);
+      const t = tiltRef.current;
+      const nowMs = performance.now();
+      let ok = t.ok;
+      if (!t.ok) {
+        if (db < BETA_IN && dg < GAMMA_IN) {
+          ok = true;
+          tiltLostRef.current = 0;
+        }
+      } else if (db >= BETA_OUT || dg >= GAMMA_OUT) {
+        // on ne perd le « Prêt » qu'après un moment hors zone
+        if (!tiltLostRef.current) tiltLostRef.current = nowMs;
+        if (nowMs - tiltLostRef.current > TILT_LOSS_MS) ok = false;
+      } else {
+        tiltLostRef.current = 0;
+      }
       tiltRef.current = { beta, gamma, ok };
       setAligned((prev) => (prev === ok ? prev : ok));
     };
@@ -1123,6 +1177,43 @@ function LancerFrancGame({ ctx }: { ctx: RoomContext }) {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", fit);
       window.removeEventListener("orientationchange", fit);
+    };
+  }, []);
+
+  // ── Garde l'écran allumé tant qu'on joue (Wake Lock)
+  useEffect(() => {
+    type Lock = { release: () => Promise<void>; addEventListener: (t: "release", cb: () => void) => void };
+    const wl = (navigator as unknown as { wakeLock?: { request: (t: "screen") => Promise<Lock> } }).wakeLock;
+    if (!wl) return;
+    let lock: Lock | null = null;
+    let gone = false;
+    const acquire = async () => {
+      if (gone || lock || document.visibilityState !== "visible") return;
+      try {
+        const l = await wl.request("screen");
+        if (gone) {
+          l.release().catch(() => {});
+          return;
+        }
+        lock = l;
+        l.addEventListener("release", () => {
+          if (lock === l) lock = null;
+        });
+      } catch {
+        /* refusé (économie d'énergie, pas d'activation) : on réessaiera */
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") acquire();
+    };
+    acquire();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pointerdown", acquire); // certains navigateurs exigent un geste
+    return () => {
+      gone = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pointerdown", acquire);
+      lock?.release().catch(() => {});
     };
   }, []);
 
