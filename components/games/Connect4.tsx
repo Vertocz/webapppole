@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import RoomConnect, { RoomContext } from "./RoomConnect";
+import type { RoomContext } from "./RoomConnect";
 import type { NetMessage } from "@/lib/p2pRoom";
 
 const ROWS = 6;
@@ -187,14 +187,8 @@ function GameBoard({ ctx, playerNum, solo }: { ctx: RoomContext; playerNum: 1 | 
   );
 }
 
-export default function Connect4() {
-  return (
-    <RoomConnect gameName="Puissance 4" minPlayers={1}>
-      {(ctx) => {
-        const solo = ctx.role === "solo";
-        const playerNum: 1 | 2 = ctx.role === "host" || solo ? 1 : 2;
-        return <GameBoard ctx={ctx} playerNum={playerNum} solo={solo} />;
-      }}
-    </RoomConnect>
-  );
+export default function Connect4({ ctx }: { ctx: RoomContext }) {
+  const solo = ctx.role === "solo";
+  const playerNum: 1 | 2 = ctx.role === "host" || solo ? 1 : 2;
+  return <GameBoard ctx={ctx} playerNum={playerNum} solo={solo} />;
 }
