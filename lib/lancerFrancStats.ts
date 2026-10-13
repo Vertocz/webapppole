@@ -18,7 +18,7 @@ export interface LFStats {
 
 export interface LFIdentity {
   id: string;
-  label: string; // « Camille D. »
+  label: string; // prénom seul : « Camille »
 }
 
 export interface Recordman {
@@ -41,8 +41,7 @@ export function getIdentity(): LFIdentity {
     if (raw) {
       const u = JSON.parse(raw) as { id?: string | number; prenom?: string; nom?: string };
       if (u.id !== undefined && u.prenom) {
-        const initial = u.nom ? ` ${u.nom.trim().charAt(0).toUpperCase()}.` : "";
-        return { id: String(u.id), label: `${u.prenom.trim()}${initial}` };
+        return { id: String(u.id), label: u.prenom.trim() };
       }
     }
   } catch {
@@ -87,12 +86,11 @@ interface Row {
 export async function pushStats(who: LFIdentity, s: LFStats): Promise<boolean> {
   if (who.id === "local") return false;
   try {
-    const [prenom, ...rest] = who.label.split(" ");
     const { error } = await supabase.from(TABLE).upsert(
       {
         joueuse_id: who.id,
-        prenom,
-        nom: rest.join(" ") || null,
+        prenom: who.label,
+        nom: null,
         makes: s.makes,
         attempts: s.attempts,
         best_streak: s.best,

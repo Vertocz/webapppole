@@ -15,20 +15,22 @@ import {
 //  RÉGLAGES — tout ce qu'il faut toucher pour équilibrer le jeu est ici
 // ═════════════════════════════════════════════════════════════════════════════
 
-/** Taux de réussite visé sur la durée (le jeu se « recale » doucement vers cette valeur). */
-const TARGET_RATE = 0.6;
-/** Chance de base de marquer : BASE + SLOPE × qualité du geste (0..1). */
-const MAKE_BASE = 0.15;
-const MAKE_SLOPE = 0.8;
-/** Force maximale du recalage vers TARGET_RATE (sur les 10 derniers tirs). */
-const RUBBER_BAND_MAX = 0.15;
+/**
+ * Mêmes règles pour tout le monde : la chance de marquer ne dépend QUE de la qualité du geste
+ * (0..1), jamais de l'historique du joueur. p = (qualité − MAKE_MIN_QUALITY) / MAKE_RANGE.
+ * Sous MAKE_MIN_QUALITY on ne marque jamais ; à partir de MAKE_MIN_QUALITY + MAKE_RANGE on
+ * marque presque toujours (plafond MAKE_MAX).
+ */
+const MAKE_MIN_QUALITY = 0.3;
+const MAKE_RANGE = 0.6;
+const MAKE_MAX = 0.95;
 
 // Geste : poussée vers le haut (accélération Y du téléphone) puis cassure du poignet.
 const IDEAL_PUSH = 14; // m/s² au pic de la poussée
-const PUSH_TOLERANCE = 10;
+const PUSH_TOLERANCE = 7;
 const IDEAL_FLICK = 320; // °/s de rotation au moment de la cassure du poignet
-const FLICK_TOLERANCE = 300;
-const ANGLE_TOLERANCE_DEG = 55; // écart max à la verticale
+const FLICK_TOLERANCE = 240;
+const ANGLE_TOLERANCE_DEG = 40; // écart max à la verticale
 const TRIGGER_Y = 3.2; // début de geste détecté au-delà de cette poussée
 const MIN_PUSH = 4.5; // en dessous, ce n'était pas un tir (simple secousse)
 const GESTURE_WINDOW_MS = 420; // durée d'observation après le début du geste
@@ -103,22 +105,14 @@ async function requestMotionPermission(): Promise<boolean> {
 }
 
 // ─── Décision du tir ─────────────────────────────────────────────────────────
-// La qualité du geste fait monter ou descendre la probabilité de marquer, avec un
-// léger recalage vers TARGET_RATE. Pour les ratés, la force du geste dit pourquoi
-// (trop faible → trop court, trop fort → plan­che) : le retour est lisible.
-function decideShot(id: number, peakPush: number, angleDeg: number, flick: number | null, recent: boolean[]): ShotResult {
+// Même fonction pour tous les joueurs. Pour les ratés, la force du geste dit pourquoi
+// (trop faible → trop court, trop fort → planche) : le retour est lisible.
+function decideShot(id: number, peakPush: number, angleDeg: number, flick: number | null): ShotResult {
   const pushQ = qualityFromValue(peakPush, IDEAL_PUSH, PUSH_TOLERANCE);
   const angleQ = qualityFromValue(angleDeg, 0, ANGLE_TOLERANCE_DEG);
-  const flickQ = flick === null ? 0.6 : qualityFromValue(flick, IDEAL_FLICK, FLICK_TOLERANCE);
+  const flickQ = flick === null ? 0.5 : qualityFromValue(flick, IDEAL_FLICK, FLICK_TOLERANCE);
   const quality = clamp(0.4 * pushQ + 0.3 * flickQ + 0.3 * angleQ, 0, 1);
-
-  let p = MAKE_BASE + MAKE_SLOPE * quality;
-  if (recent.length >= 4) {
-    const last = recent.slice(-10);
-    const rate = last.filter(Boolean).length / last.length;
-    p += clamp((TARGET_RATE - rate) * 0.6, -RUBBER_BAND_MAX, RUBBER_BAND_MAX);
-  }
-  p = clamp(p, 0.12, 0.92);
+  const p = clamp((quality - MAKE_MIN_QUALITY) / MAKE_RANGE, 0, MAKE_MAX);
 
   const side: 1 | -1 = Math.random() < 0.5 ? -1 : 1;
   if (Math.random() < p) {
@@ -450,18 +444,6 @@ function drawScene(
   ctx.lineTo(W, L.floorY);
   ctx.stroke();
 
-  // Bras de support, en retrait derrière la planche.
-  ctx.save();
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "rgba(120,140,170,0.55)";
-  ctx.lineWidth = 7 * unit;
-  ctx.beginPath();
-  ctx.moveTo(L.boardX + L.boardW * 0.9, L.boardY + L.boardH * 0.3);
-  ctx.lineTo(W * 0.9, L.boardY + L.boardH * 0.3);
-  ctx.lineTo(W * 0.9, L.floorY);
-  ctx.stroke();
-  ctx.restore();
-
   // Planche.
   ctx.fillStyle = "rgba(210,228,250,0.12)";
   ctx.fillRect(L.boardX, L.boardY, L.boardW, L.boardH);
@@ -700,7 +682,6 @@ function LancerFrancGame() {
   const [stats, setStats] = useState<Stats>({ attempts: 0, makes: 0, streak: 0, best: 0 });
   const statsRef = useRef<Stats>(stats);
   const whoRef = useRef<LFIdentity>({ id: "local", label: "Moi" });
-  const recentRef = useRef<boolean[]>([]);
   const shotIdRef = useRef(0);
   const phaseRef = useRef<GamePhase>("waiting-vertical");
 
@@ -754,7 +735,7 @@ function LancerFrancGame() {
   const handleShoot = useCallback((peakPush: number, angleDeg: number, flick: number | null) => {
     if (phaseRef.current !== "measuring") return;
     shotIdRef.current += 1;
-    const next = decideShot(shotIdRef.current, peakPush, angleDeg, flick, recentRef.current);
+    const next = decideShot(shotIdRef.current, peakPush, angleDeg, flick);
     changePhase("animating");
     setShot(next);
   }, [changePhase]);
@@ -765,7 +746,6 @@ function LancerFrancGame() {
   const handleResult = useCallback((outcome: Outcome) => {
     if (phaseRef.current !== "animating") return;
     const made = isMade(outcome);
-    recentRef.current = [...recentRef.current, made].slice(-20);
     const prev = statsRef.current;
     const streak = made ? prev.streak + 1 : 0;
     const next: Stats = {
