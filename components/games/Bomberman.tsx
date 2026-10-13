@@ -451,7 +451,6 @@ function BombermanGame({ ctx }: { ctx: RoomContext }) {
         if (payload.bomb) pendingBombsRef.current.push(from);
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost]);
 
   // Boucle de simulation (hôte uniquement)
@@ -467,7 +466,6 @@ function BombermanGame({ ctx }: { ctx: RoomContext }) {
       });
     }, TICK_MS);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost]);
 
   const handleDir = useCallback(

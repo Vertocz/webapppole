@@ -89,7 +89,6 @@ function GameBoard({ ctx, playerNum, solo }: { ctx: RoomContext; playerNum: 1 | 
     ctx.onMessage((msg: NetMessage) => {
       if (msg.type === "state") setState(msg.payload as GameState);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // L'hôte reçoit les coups des clients et fait autorité sur l'état
@@ -101,7 +100,6 @@ function GameBoard({ ctx, playerNum, solo }: { ctx: RoomContext; playerNum: 1 | 
         applyMoveAuthoritative(col);
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost]);
 
   const applyMoveAuthoritative = (col: number) => {
