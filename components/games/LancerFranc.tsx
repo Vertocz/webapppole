@@ -2,24 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// ─── Réglages du geste (à recalibrer après tests sur téléphone réel) ──────────
-const IDEAL_SWIPE_SPEED = 2.0; // hauteurs de zone de tir / seconde
-const SWIPE_SPEED_TOLERANCE = 2.2;
-const IDEAL_ANGLE_DEG = 0; // 0° = tracé parfaitement vertical
-const ANGLE_TOLERANCE_DEG = 60;
-const IDEAL_MOTION_MAG = 14; // m/s² d'accélération linéaire au pic
-const MOTION_MAG_TOLERANCE = 10;
+// ─── Réglages du geste (à recalibrer sur téléphone réel) ─────────────────────
+const IDEAL_MOTION_MAG = 16; // m/s² d'accélération linéaire au pic pour un tir parfait
+const MOTION_MAG_TOLERANCE = 12;
 
 const OUTCOME_THRESHOLDS = { swish: 0.8, made: 0.5, rimout: 0.28 };
 
 type Outcome = "swish" | "made" | "rimout" | "miss";
+type GameState = "ready" | "animating" | "result";
 
 interface ShotResult {
   id: number;
   quality: number;
   outcome: Outcome;
-  missDx: number; // -1 (gauche) à 1 (droite)
-  power: number; // 0..1, influence la hauteur de l'arc et la portée
+  missDx: number;
+  power: number;
 }
 
 function qualityFromValue(value: number, ideal: number, tolerance: number): number {
@@ -33,7 +30,7 @@ function resolveOutcome(quality: number): Outcome {
   return "miss";
 }
 
-// ─── Permission capteurs (obligatoire sur iOS, no-op ailleurs) ────────────────
+// ─── Permission capteurs (iOS + Android) ──────────────────────────────────────
 async function requestMotionPermission(): Promise<boolean> {
   try {
     const DME = window.DeviceMotionEvent as unknown as {
@@ -52,9 +49,6 @@ async function requestMotionPermission(): Promise<boolean> {
 // ─── Rendu Canvas du tir ──────────────────────────────────────────────────────
 function ShotCanvas({ shot, onDone }: { shot: ShotResult | null; onDone: (o: Outcome) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // La ref évite de remettre l'effet d'animation en dépendance de onDone,
-  // qui change d'identité à chaque rendu du parent (setState des stats) —
-  // sans ça, l'animation du même tir se relançait indéfiniment en boucle.
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
@@ -81,8 +75,6 @@ function ShotCanvas({ shot, onDone }: { shot: ShotResult | null; onDone: (o: Out
     ctx.ellipse(rimX, rimY, 34, 8, 0, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Point d'arrivée : différent selon le résultat, pour donner une vraie
-    // sensation de profondeur (dans le filet / trop court / trop long).
     const start = { x: W * 0.5, y: H * 0.88 };
     const missDxPx = current.missDx === 0 ? 1 : current.missDx;
     let endX = rimX;
@@ -90,16 +82,16 @@ function ShotCanvas({ shot, onDone }: { shot: ShotResult | null; onDone: (o: Out
 
     if (current.outcome === "swish" || current.outcome === "made") {
       endX = rimX + current.missDx * 12;
-      endY = rimY + 18; // la balle descend sous l'arceau, dans le filet
+      endY = rimY + 18;
     } else if (current.outcome === "rimout") {
       endX = rimX + missDxPx * 55;
-      endY = rimY - 6; // touche l'arceau, ne rentre pas
+      endY = rimY - 6;
     } else if (current.power < 0.4) {
       endX = rimX + current.missDx * 40;
-      endY = rimY + (start.y - rimY) * 0.45; // trop court : retombe avant
+      endY = rimY + (start.y - rimY) * 0.45;
     } else {
       endX = rimX + missDxPx * 90;
-      endY = rimY - 35; // trop fort : passe au-dessus / à côté
+      endY = rimY - 35;
     }
 
     const travel = start.y - endY;
@@ -161,135 +153,16 @@ function ShotCanvas({ shot, onDone }: { shot: ShotResult | null; onDone: (o: Out
   );
 }
 
-// ─── Zone de tir tactile (+ capteurs si dispo) ─────────────────────────────────
-function ShootZone({ disabled, onShoot }: { disabled: boolean; onShoot: (power: number, angleDeg: number, smoothness: number) => void }) {
-  const zoneRef = useRef<HTMLDivElement>(null);
-  const pointsRef = useRef<{ x: number; y: number; t: number }[]>([]);
-  const motionSamplesRef = useRef<number[]>([]);
-  const motionHandlerRef = useRef<((e: DeviceMotionEvent) => void) | null>(null);
-  const [armed, setArmed] = useState(false);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (disabled) return;
-    pointsRef.current = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
-    motionSamplesRef.current = [];
-    setArmed(true);
-
-    const handler = (ev: DeviceMotionEvent) => {
-      const a = ev.acceleration ?? ev.accelerationIncludingGravity;
-      if (!a) return;
-      const mag = Math.sqrt((a.x ?? 0) ** 2 + (a.y ?? 0) ** 2 + (a.z ?? 0) ** 2);
-      motionSamplesRef.current.push(mag);
-    };
-    motionHandlerRef.current = handler;
-    window.addEventListener("devicemotion", handler);
-
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!armed) return;
-    pointsRef.current.push({ x: e.clientX, y: e.clientY, t: performance.now() });
-  };
-
-  const finish = () => {
-    if (!armed) return;
-    setArmed(false);
-    if (motionHandlerRef.current) {
-      window.removeEventListener("devicemotion", motionHandlerRef.current);
-      motionHandlerRef.current = null;
-    }
-
-    const zone = zoneRef.current;
-    const points = pointsRef.current;
-    if (!zone || points.length < 2) return;
-
-    const first = points[0];
-    const last = points[points.length - 1];
-    const dy = first.y - last.y; // positif = mouvement vers le haut
-    const dx = last.x - first.x;
-    const durationS = Math.max(0.05, (last.t - first.t) / 1000);
-    const zoneHeight = zone.clientHeight || 1;
-
-    const swipeSpeed = dy / zoneHeight / durationS; // hauteurs de zone / seconde
-    const angleDeg = (Math.atan2(Math.abs(dx), Math.max(1, dy)) * 180) / Math.PI;
-
-    // Régularité du tracé (plus les segments sont réguliers, plus la note est haute)
-    let smoothness = 0.6;
-    if (points.length >= 3) {
-      const speeds: number[] = [];
-      for (let i = 1; i < points.length; i++) {
-        const seg = points[i];
-        const prev = points[i - 1];
-        const dt = Math.max(1, seg.t - prev.t);
-        const dist = Math.hypot(seg.x - prev.x, seg.y - prev.y);
-        speeds.push(dist / dt);
-      }
-      const mean = speeds.reduce((s, v) => s + v, 0) / speeds.length;
-      const variance = speeds.reduce((s, v) => s + (v - mean) ** 2, 0) / speeds.length;
-      const cv = mean > 0 ? Math.sqrt(variance) / mean : 1;
-      smoothness = Math.max(0, Math.min(1, 1 - cv / 1.5));
-    }
-
-    // Fusion avec les données accéléromètre si dispo et significatives
-    const motion = motionSamplesRef.current;
-    let power = qualityFromValue(swipeSpeed, IDEAL_SWIPE_SPEED, SWIPE_SPEED_TOLERANCE);
-    if (motion.length >= 5) {
-      const peak = Math.max(...motion);
-      const motionPowerQ = qualityFromValue(peak, IDEAL_MOTION_MAG, MOTION_MAG_TOLERANCE);
-      power = 0.6 * motionPowerQ + 0.4 * power;
-
-      let jerkSum = 0;
-      for (let i = 1; i < motion.length; i++) jerkSum += Math.abs(motion[i] - motion[i - 1]);
-      const avgJerk = jerkSum / (motion.length - 1);
-      const motionSmoothQ = Math.max(0, Math.min(1, 1 - avgJerk / 8));
-      smoothness = 0.5 * motionSmoothQ + 0.5 * smoothness;
-    }
-
-    onShoot(power, angleDeg, smoothness);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (motionHandlerRef.current) window.removeEventListener("devicemotion", motionHandlerRef.current);
-    };
-  }, []);
-
-  return (
-    <div
-      ref={zoneRef}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={finish}
-      onPointerCancel={finish}
-      className="rounded-2xl flex flex-col items-center justify-center gap-2 transition-all select-none"
-      style={{
-        height: 200,
-        touchAction: "none",
-        background: armed
-          ? "linear-gradient(135deg,var(--accent),var(--accent2))"
-          : disabled
-          ? "var(--bg-input)"
-          : "var(--bg-card)",
-        border: `1px solid ${armed ? "transparent" : "var(--border)"}`,
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      <span className="text-4xl">{armed ? "🏀" : "🖐️"}</span>
-      <p className="text-sm font-medium text-center px-6" style={{ color: armed ? "white" : "var(--text-main)" }}>
-        {armed ? "Fais ton geste de tir, relâche en haut !" : "Maintiens, lève le téléphone, tire vers le haut"}
-      </p>
-    </div>
-  );
-}
-
-// ─── Composant de jeu (solo uniquement) ────────────────────────────────────────
-function LancerFrancGame() {
+// ─── Composant principal de jeu ───────────────────────────────────────────────
+export default function LancerFranc() {
   const [sensorStatus, setSensorStatus] = useState<"unknown" | "granted" | "denied" | "unsupported">("unknown");
+  const [gameState, setGameState] = useState<GameState>("ready");
   const [shot, setShot] = useState<ShotResult | null>(null);
-  const [animating, setAnimating] = useState(false);
   const [stats, setStats] = useState({ attempts: 0, makes: 0, streak: 0, best: 0 });
+  
   const shotIdRef = useRef(0);
+  const motionBufferRef = useRef<number[]>([]);
+  const verticalHoldTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.DeviceMotionEvent === "undefined") {
@@ -302,18 +175,65 @@ function LancerFrancGame() {
     setSensorStatus(ok ? "granted" : "denied");
   };
 
-  const handleShoot = (power: number, angleDeg: number, smoothness: number) => {
-    if (animating) return;
-    const angleQ = qualityFromValue(angleDeg, IDEAL_ANGLE_DEG, ANGLE_TOLERANCE_DEG);
-    const jitter = (Math.random() - 0.5) * 0.12;
-    const quality = Math.max(0, Math.min(1, 0.45 * power + 0.3 * angleQ + 0.25 * smoothness + jitter));
-    const outcome = resolveOutcome(quality);
-    const missDx = outcome === "miss" || outcome === "rimout" ? (Math.random() * 2 - 1) * (1 - quality) * 1.4 : 0;
+  // Gestionnaire unique des mouvements et de l'orientation
+  useEffect(() => {
+    if (sensorStatus !== "granted") return;
 
-    shotIdRef.current += 1;
-    setShot({ id: shotIdRef.current, quality, outcome, missDx, power });
-    setAnimating(true);
-  };
+    const handleMotion = (e: DeviceMotionEvent) => {
+      const a = e.acceleration ?? e.accelerationIncludingGravity;
+      if (!a) return;
+      const mag = Math.sqrt((a.x ?? 0) ** 2 + (a.y ?? 0) ** 2 + (a.z ?? 0) ** 2);
+
+      if (gameState === "ready") {
+        // Détection d'un pic de mouvement vers le haut pour déclencher le tir
+        motionBufferRef.current.push(mag);
+        if (motionBufferRef.current.length > 10) motionBufferRef.current.shift();
+
+        const peak = Math.max(...motionBufferRef.current);
+        if (peak > 13) {
+          // Déclenchement du tir
+          const power = qualityFromValue(peak, IDEAL_MOTION_MAG, MOTION_MAG_TOLERANCE);
+          const smoothness = 0.8; // Valeur par défaut propre au mouvement pur
+          const angleDeg = 0;
+
+          const angleQ = qualityFromValue(angleDeg, 0, 60);
+          const jitter = (Math.random() - 0.5) * 0.12;
+          const quality = Math.max(0, Math.min(1, 0.5 * power + 0.3 * angleQ + 0.2 * smoothness + jitter));
+          const outcome = resolveOutcome(quality);
+          const missDx = outcome === "miss" || outcome === "rimout" ? (Math.random() * 2 - 1) * (1 - quality) * 1.4 : 0;
+
+          shotIdRef.current += 1;
+          setShot({ id: shotIdRef.current, quality, outcome, missDx, power });
+          setGameState("animating");
+          motionBufferRef.current = [];
+        }
+      } else if (gameState === "result") {
+        // En phase de résultat, on vérifie si le téléphone est maintenu vertical / stable
+        // pour réarmer automatiquement le jeu
+        const isStable = mag < 3.5; // Peu de mouvement brusque
+        
+        if (isStable) {
+          if (!verticalHoldTimerRef.current) {
+            verticalHoldTimerRef.current = window.setTimeout(() => {
+              setGameState("ready");
+              verticalHoldTimerRef.current = null;
+            }, 350); // 350 ms immobile à la verticale pour valider le reset
+          }
+        } else {
+          if (verticalHoldTimerRef.current) {
+            clearTimeout(verticalHoldTimerRef.current);
+            verticalHoldTimerRef.current = null;
+          }
+        }
+      }
+    };
+
+    window.addEventListener("devicemotion", handleMotion);
+    return () => {
+      window.removeEventListener("devicemotion", handleMotion);
+      if (verticalHoldTimerRef.current) clearTimeout(verticalHoldTimerRef.current);
+    };
+  }, [sensorStatus, gameState]);
 
   const handleAnimationDone = (outcome: Outcome) => {
     const made = outcome === "swish" || outcome === "made";
@@ -326,7 +246,7 @@ function LancerFrancGame() {
         best: Math.max(prev.best, streak),
       };
     });
-    setAnimating(false);
+    setGameState("result");
   };
 
   const pct = stats.attempts > 0 ? Math.round((stats.makes / stats.attempts) * 100) : 0;
@@ -339,12 +259,12 @@ function LancerFrancGame() {
           className="w-full py-2.5 rounded-xl text-sm font-medium"
           style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
         >
-          📱 Activer les capteurs de mouvement (plus réaliste)
+          📱 Activer les capteurs de mouvement pour jouer
         </button>
       )}
       {sensorStatus === "denied" && (
-        <p className="text-xs text-center" style={{ color: "var(--text-muted)" }}>
-          Capteurs refusés — tu peux quand même jouer, uniquement au geste tactile.
+        <p className="text-xs text-center text-red-400">
+          Accès aux capteurs refusé. Autorise les mouvements dans ton navigateur.
         </p>
       )}
 
@@ -357,7 +277,23 @@ function LancerFrancGame() {
         <Stat label="Record" value={stats.best} />
       </div>
 
-      <ShootZone disabled={animating} onShoot={handleShoot} />
+      {/* Indicateur visuel d'état (sans interaction tactile requise) */}
+      <div
+        className="rounded-2xl p-4 flex flex-col items-center justify-center gap-2 transition-all select-none text-center"
+        style={{
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+        }}
+      >
+        <span className="text-3xl">
+          {gameState === "ready" ? "🏀" : gameState === "animating" ? "🚀" : "📱"}
+        </span>
+        <p className="text-sm font-medium" style={{ color: "var(--text-main)" }}>
+          {gameState === "ready" && "Téléphone prêt — Fais un mouvement sec vers le haut pour tirer !"}
+          {gameState === "animating" && "Trajectoire en cours..."}
+          {gameState === "result" && "Mets ton téléphone à la verticale pour retenter un tir"}
+        </p>
+      </div>
     </div>
   );
 }
@@ -373,8 +309,4 @@ function Stat({ label, value }: { label: string; value: string | number }) {
       </p>
     </div>
   );
-}
-
-export default function LancerFranc() {
-  return <LancerFrancGame />;
 }
