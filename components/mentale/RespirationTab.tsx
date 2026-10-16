@@ -128,7 +128,7 @@ function IconBtn({ onClick, icon, danger = false, title }: { onClick: () => void
 }
 
 // ─── Composant principal ──────────────────────────────────────────────────────
-export default function RespirationTab({ userId, readOnly = false, onSave }: { userId: string; readOnly?: boolean; onSave?: () => void }) {
+export default function RespirationTab({ userId, readOnly = false, onSave, onCreate }: { userId: string; readOnly?: boolean; onSave?: () => void; onCreate?: () => void }) {
   const [historique, setHistorique] = useState<RespiExt[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -227,6 +227,7 @@ export default function RespirationTab({ userId, readOnly = false, onSave }: { u
       } else {
         const { error } = await supabase.from("suivi_respiration").insert({ joueur_id: userId, ...payload });
         if (error) throw error;
+        onCreate?.();
       }
 
       setSaved(true);

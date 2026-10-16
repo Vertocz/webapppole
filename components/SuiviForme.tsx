@@ -45,7 +45,7 @@ function RangeSwitch({ value, onChange }: { value: string; onChange: (v: string)
   );
 }
 
-export default function SuiviForme({ userId, readOnly = false, onSave }: { userId: string; readOnly?: boolean; onSave?: () => void }) {
+export default function SuiviForme({ userId, readOnly = false, onSave, onCreate }: { userId: string; readOnly?: boolean; onSave?: () => void; onCreate?: () => void }) {
   const [data, setData] = useState<SuiviFormeType[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -95,7 +95,8 @@ export default function SuiviForme({ userId, readOnly = false, onSave }: { userI
     if (editingId) {
       await supabase.from("suivi_forme").update(payload).eq("id", editingId);
     } else {
-      await supabase.from("suivi_forme").insert({ joueuse_id: userId, ...payload });
+      const { error } = await supabase.from("suivi_forme").insert({ joueuse_id: userId, ...payload });
+      if (!error) onCreate?.();
     }
     setSaved(true); setTimeout(() => setSaved(false), 3000); onSave?.();
     resetForm(); await load(); setSaving(false);

@@ -42,7 +42,7 @@ function RangeSwitch({ value, onChange }: { value: string; onChange: (v: string)
   );
 }
 
-export default function SuiviSportif({ userId, readOnly = false, onSave }: { userId: string; readOnly?: boolean; onSave?: () => void }) {
+export default function SuiviSportif({ userId, readOnly = false, onSave, onCreate }: { userId: string; readOnly?: boolean; onSave?: () => void; onCreate?: () => void }) {
   const [activites, setActivites] = useState<Activite[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -92,7 +92,8 @@ export default function SuiviSportif({ userId, readOnly = false, onSave }: { use
     if (editingId) {
       await supabase.from("activites").update(payload).eq("id", editingId);
     } else {
-      await supabase.from("activites").insert({ joueuse_id: userId, ...payload });
+      const { error } = await supabase.from("activites").insert({ joueuse_id: userId, ...payload });
+      if (!error) onCreate?.();
     }
     setSaved(true); setTimeout(() => setSaved(false), 3000); onSave?.();
     resetForm(); await load(); setSaving(false);

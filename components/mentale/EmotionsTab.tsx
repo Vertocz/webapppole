@@ -127,7 +127,7 @@ function EmotionPlaceholder({ emoji, couleur }: { emoji: string; couleur: string
 }
 
 // ─── Composant ────────────────────────────────────────────────────────────────
-export default function EmotionsTab({ userId, readOnly = false }: { userId: string; readOnly?: boolean }) {
+export default function EmotionsTab({ userId, readOnly = false, onCreate }: { userId: string; readOnly?: boolean; onCreate?: () => void }) {
   const [historique, setHistorique] = useState<SuiviEmotionFull[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -260,6 +260,7 @@ export default function EmotionsTab({ userId, readOnly = false }: { userId: stri
         const rows = Array.from(selectedEmotions).map((nom) => buildPayload(userId, dateS, nom, entries[nom]));
         const { error } = await supabase.from("suivi_emotions").insert(rows);
         if (error) throw error;
+        onCreate?.(); // une seule carte par validation, même avec plusieurs émotions
       }
 
       setSaved(true);

@@ -8,6 +8,8 @@ export interface Joueuse {
   categorie?: string;
   /** Accès à la section Jeux. Par défaut : true pour le pôle Masculin, false sinon. Gérable individuellement depuis l'admin. */
   acces_jeux?: boolean;
+  /** Fait partie des 5 joueurs sélectionnés : gagne des cartes Victorinis. */
+  victorinis?: boolean;
 }
 
 export interface Staff {

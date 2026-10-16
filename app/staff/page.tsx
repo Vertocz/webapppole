@@ -19,13 +19,16 @@ import NotificationsPrompt from "@/components/NotificationsPrompt";
 import NotificationsInbox from "@/components/NotificationsInbox";
 import GamesTab from "@/components/games/GamesTab";
 import CarteAvantage from "@/components/CarteAvantage";
+import VictorinisTab from "@/components/VictorinisTab";
+import CarteModal from "@/components/CarteModal";
+import { tirerCarteConnexion, type CarteGagnee } from "@/lib/victorinis";
 import { useBadges } from "@/lib/useBadges";
 import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
 import NotifModal from "@/components/NotifModal";
 
-type View = "billets" | "joueurs" | "tournois" | "gares" | "jeux" | "carte";
+type View = "billets" | "joueurs" | "tournois" | "gares" | "jeux" | "carte" | "victorinis";
 
 export default function StaffPage() {
   const [user, setUser] = useState<Staff | null>(null);
@@ -42,6 +45,8 @@ export default function StaffPage() {
   const [profilOpen, setProfilOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [notifId, setNotifId] = useState<string | null>(null);
+  const [carteGagnee, setCarteGagnee] = useState<CarteGagnee | null>(null);
+  const [cartesRefresh, setCartesRefresh] = useState(0);
   const { checkAndAward } = useBadges();
   const router = useRouter();
 
@@ -70,6 +75,15 @@ export default function StaffPage() {
     // Le staff n'a plus de badges — on passe juste badgesChecked à true
     setBadgesChecked(true);
     checkAndAward(u.id, "staff", undefined, u.prenom, u.nom, () => {});
+
+    // Victorinis : une carte à chaque connexion (staff du pôle masculin uniquement)
+    if (u.masculin) {
+      tirerCarteConnexion(u.id, "staff").then((c) => {
+        if (!c) return;
+        setCarteGagnee(c);
+        setCartesRefresh((n) => n + 1);
+      });
+    }
 
     // Détection notif_id dans l'URL (clic depuis une notification push)
     const params = new URLSearchParams(window.location.search);
@@ -153,6 +167,7 @@ export default function StaffPage() {
     ...(hasBillets ? [{ id: "billets" as View, label: "Mes billets", icon: "🎫" }] : []),
     ...(hasCarte ? [{ id: "carte" as View, label: "Ma carte", icon: "💳" }] : []),
     { id: "joueurs", label: "Suivi joueurs", icon: "📊" },
+    ...(user.masculin ? [{ id: "victorinis" as View, label: "Victorinis", icon: "🃏" }] : []),
     { id: "tournois", label: "Tournois", icon: "🏆" },
     { id: "jeux", label: "Jeux", icon: "🎮" },
     ...(isLogisticien ? [{ id: "gares" as View, label: "Gares", icon: "🚉" }] : []),
@@ -258,6 +273,9 @@ export default function StaffPage() {
 
           {view === "billets" && <Billets userId={user.id} />}
           {view === "carte" && <CarteAvantage userId={user.id} />}
+          {view === "victorinis" && user.masculin && (
+            <VictorinisTab userId={user.id} userType="staff" refreshKey={cartesRefresh} />
+          )}
           {view === "tournois" && <Tournois />}
           {view === "gares" && <GaresLogistique />}
           {view === "jeux" && <GamesTab />}
@@ -387,6 +405,10 @@ export default function StaffPage() {
       {exportOpen && <ExportPDFModal joueurs={joueurs} onClose={() => setExportOpen(false)} />}
 
       {notifId && <NotifModal notifId={notifId} onClose={() => setNotifId(null)} />}
+
+      {carteGagnee && (
+        <CarteModal personne={carteGagnee.personne} rarete={carteGagnee.rarete} onClose={() => setCarteGagnee(null)} />
+      )}
     </>
   );
 }
