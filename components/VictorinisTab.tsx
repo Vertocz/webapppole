@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "@/components/Card";
 import CarteModal from "@/components/CarteModal";
 import {
   PERSONNES,
-  RARETES,
   RARETE_COLOR,
   RARETE_LABEL,
   TOTAL_CARTES,
   getCarteUrl,
   getCollection,
+  getPersonne,
   type Rarete,
   type UserTypeCarte,
 } from "@/lib/victorinis";
@@ -21,6 +21,9 @@ interface Props {
   /** Change quand une nouvelle carte est gagnée → recharge la collection */
   refreshKey?: number;
 }
+
+// Or d'abord, puis argent, puis bleu
+const ORDRE_RARETE: Rarete[] = ["or", "argent", "bleu"];
 
 export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Props) {
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -39,8 +42,19 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
     };
   }, [userId, userType, refreshKey]);
 
-  const possedees = Object.keys(counts).length;
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  // Uniquement les cartes possédées, triées par rareté puis par ordre des personnes
+  const cartes = useMemo(() => {
+    const liste: { personne: string; rarete: Rarete; n: number }[] = [];
+    for (const r of ORDRE_RARETE) {
+      for (const p of PERSONNES) {
+        const n = counts[`${p.slug}|${r}`] ?? 0;
+        if (n > 0) liste.push({ personne: p.slug, rarete: r, n });
+      }
+    }
+    return liste;
+  }, [counts]);
+
+  const total = cartes.reduce((a, c) => a + c.n, 0);
 
   return (
     <div className="space-y-5">
@@ -51,7 +65,9 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
               MES VICTORINIS
             </p>
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {loading ? "Chargement…" : `${possedees} / ${TOTAL_CARTES} cartes différentes · ${total} au total`}
+              {loading
+                ? "Chargement…"
+                : `${cartes.length} / ${TOTAL_CARTES} cartes différentes · ${total} au total`}
             </p>
           </div>
           <span className="text-3xl">🃏</span>
@@ -60,68 +76,57 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
           <div
             className="h-full rounded-full transition-all duration-700"
             style={{
-              width: `${(possedees / TOTAL_CARTES) * 100}%`,
+              width: `${(cartes.length / TOTAL_CARTES) * 100}%`,
               background: "linear-gradient(90deg, #3B7BFF, #C9D1DE, #F2B90F)",
             }}
           />
         </div>
       </Card>
 
-      {PERSONNES.map((p) => (
-        <div key={p.slug}>
-          <p className="text-xs uppercase tracking-widest mb-2 px-1" style={{ color: "var(--text-sub)" }}>
-            {p.prenom} {p.nom} · {p.role === "coach" ? "Coach" : `#${p.fichier}`}
+      {!loading && cartes.length === 0 && (
+        <Card>
+          <p className="text-sm text-center" style={{ color: "var(--text-muted)" }}>
+            Tu n&apos;as pas encore de carte. La première arrive très vite ! 🏀
           </p>
-          <div className="grid grid-cols-3 gap-2">
-            {RARETES.map((r) => {
-              const n = counts[`${p.slug}|${r}`] ?? 0;
-              const color = RARETE_COLOR[r];
-              const owned = n > 0;
-              return (
-                <button
-                  key={r}
-                  disabled={!owned}
-                  onClick={() => owned && setApercu({ personne: p.slug, rarete: r })}
-                  className="relative rounded-xl overflow-hidden transition-transform active:scale-95 disabled:active:scale-100"
-                  style={{
-                    aspectRatio: "2 / 3",
-                    border: `1px solid ${owned ? color : "var(--border)"}`,
-                    background: "var(--bg-input)",
-                    boxShadow: owned && r === "or" ? "0 0 14px rgba(242,185,15,0.45)" : undefined,
-                  }}
-                  aria-label={`${p.prenom} ${p.nom}, carte ${RARETE_LABEL[r]}${owned ? "" : " (non obtenue)"}`}
+        </Card>
+      )}
+
+      <div className="grid grid-cols-3 gap-2">
+        {cartes.map(({ personne, rarete, n }) => {
+          const color = RARETE_COLOR[rarete];
+          const p = getPersonne(personne);
+          return (
+            <button
+              key={`${personne}|${rarete}`}
+              onClick={() => setApercu({ personne, rarete })}
+              className="relative rounded-xl overflow-hidden transition-transform active:scale-95"
+              style={{
+                aspectRatio: "2 / 3",
+                border: `1px solid ${color}`,
+                background: "var(--bg-input)",
+                boxShadow: rarete === "or" ? "0 0 14px rgba(242,185,15,0.45)" : undefined,
+              }}
+              aria-label={`${p?.prenom ?? ""} ${p?.nom ?? ""}, carte ${RARETE_LABEL[rarete]}${n > 1 ? `, ${n} exemplaires` : ""}`}
+            >
+              <img
+                src={getCarteUrl(personne, rarete, 300)}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                className="w-full h-full object-cover"
+              />
+              {n > 1 && (
+                <span
+                  className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-[11px] font-bold"
+                  style={{ background: color, color: rarete === "bleu" ? "white" : "#111" }}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={getCarteUrl(p.slug, r, 300)}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    className="w-full h-full object-cover"
-                    style={owned ? undefined : { filter: "grayscale(1) brightness(0.28)" }}
-                  />
-                  {!owned && (
-                    <span
-                      className="absolute inset-0 flex items-center justify-center text-2xl font-bold"
-                      style={{ color: "rgba(255,255,255,0.35)" }}
-                    >
-                      ?
-                    </span>
-                  )}
-                  {n > 1 && (
-                    <span
-                      className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-[11px] font-bold"
-                      style={{ background: color, color: r === "bleu" ? "white" : "#111" }}
-                    >
-                      ×{n}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+                  ×{n}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
       {apercu && (
         <CarteModal
