@@ -152,12 +152,7 @@ export default function GamesTab() {
 
   if (mode === "lancerfranc") {
     return (
-      <div className="space-y-4">
-        <button onClick={() => setMode("menu")} className="text-sm" style={{ color: "var(--text-muted)" }}>
-          ← Retour aux jeux
-        </button>
-        <LancerFranc />
-      </div>
+      <LancerFranc onExit={() => setMode("menu")} />
     );
   }
 
