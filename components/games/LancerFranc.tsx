@@ -128,6 +128,18 @@ function decideShot(id: number, peakPush: number, angleDeg: number, flick: numbe
   return { id, outcome, side };
 }
 
+// ─── Palette : aplats, aucun dégradé ─────────────────────────────────────────
+const C_BG = "#0F1520";
+const C_FLOOR = "#161E2C";
+const C_BOARD = "#18212F";
+const C_LINE = "#E9EEF7";
+const C_ORANGE = "#FF6A2A";
+const C_ORANGE_DARK = "#B84418";
+const C_BALL = "#F57A2E";
+const C_SEAM = "#1B0F08";
+const C_GREEN = "#5FE3A1";
+const C_RED = "#FF8A80";
+
 // ─── Géométrie de la scène (partagée entre trajectoire et dessin) ────────────
 interface Layout {
   unit: number;
@@ -139,22 +151,21 @@ interface Layout {
   boardY: number;
   boardW: number;
   boardH: number;
-  netTopY: number;
   netBottomY: number;
-  netTopW: number;
-  netBottomW: number;
   floorY: number;
+  rNear: number; // rayon du ballon au sol (au départ)
+  rFar: number; // rayon du ballon à hauteur du cercle
   start: { x: number; y: number };
 }
 
 function layout(W: number, H: number): Layout {
-  const unit = clamp(W / 390, 0.78, 1.45);
+  const unit = clamp(W / 390, 0.8, 1.5);
   const rimX = W * 0.5;
-  const rimY = H * 0.28;
-  const rimRX = W * 0.17;
-  const rimRY = rimRX * 0.2;
-  const boardW = Math.min(W * 0.6, 250 * unit);
-  const boardH = boardW * 0.6;
+  const rimY = H * 0.3;
+  const rimRX = W * 0.2;
+  const rimRY = rimRX * 0.22;
+  const boardW = Math.min(W * 0.7, 290 * unit);
+  const boardH = boardW * 0.62;
   return {
     unit,
     rimX,
@@ -165,13 +176,137 @@ function layout(W: number, H: number): Layout {
     boardY: rimY - boardH * 0.78,
     boardW,
     boardH,
-    netTopY: rimY + rimRY * 0.4,
-    netBottomY: rimY + rimRY * 0.4 + rimRX * 1.35,
-    netTopW: rimRX * 1.9,
-    netBottomW: rimRX * 1.2,
-    floorY: H * 0.76,
-    start: { x: W * 0.5, y: H * 0.8 },
+    netBottomY: rimY + rimRY + rimRX * 1.5,
+    floorY: H * 0.8,
+    rNear: W * 0.1,
+    rFar: W * 0.085,
+    start: { x: W * 0.5, y: H * 0.84 },
   };
+}
+
+/** Le ballon rapetisse en montant vers le cercle : taille déduite de la hauteur seulement. */
+function radiusAtY(L: Layout, y: number): number {
+  const k = clamp((L.start.y - y) / (L.start.y - L.rimY), 0, 1);
+  return L.rNear + (L.rFar - L.rNear) * k;
+}
+
+// ─── Filet : maillage en losanges simulé (verlet) ────────────────────────────
+const NET_ROWS = 6;
+const NET_COLS = 6;
+
+interface NetTopo {
+  n: number;
+  rowOf: number[];
+  offOf: number[]; // position horizontale en unités de colonne (0..NET_COLS)
+  edges: Array<[number, number, boolean]>; // [a, b, dessiné]
+}
+
+function netTopology(): NetTopo {
+  const rowOf: number[] = [];
+  const offOf: number[] = [];
+  const index: number[][] = [];
+  for (let r = 0; r < NET_ROWS; r++) {
+    const count = r % 2 === 0 ? NET_COLS + 1 : NET_COLS;
+    index.push([]);
+    for (let k = 0; k < count; k++) {
+      index[r].push(rowOf.length);
+      rowOf.push(r);
+      offOf.push(r % 2 === 0 ? k : k + 0.5);
+    }
+  }
+  const edges: Array<[number, number, boolean]> = [];
+  for (let r = 0; r < NET_ROWS; r++) {
+    const row = index[r];
+    for (let k = 0; k < row.length; k++) {
+      if (k + 1 < row.length) edges.push([row[k], row[k + 1], false]); // structure, invisible
+      if (r + 1 >= NET_ROWS) continue;
+      const below = index[r + 1];
+      const lower = r % 2 === 0 ? [k - 1, k] : [k, k + 1];
+      for (const j of lower) {
+        if (j >= 0 && j < below.length) edges.push([row[k], below[j], true]);
+      }
+    }
+  }
+  return { n: rowOf.length, rowOf, offOf, edges };
+}
+
+const NET_TOPO = netTopology();
+
+function netRestPositions(L: Layout): Float32Array {
+  const pos = new Float32Array(NET_TOPO.n * 2);
+  const topW = L.rimRX * 2 * 0.97;
+  const botW = L.rimRX * 2 * 0.62;
+  const top = L.rimY + L.rimRY * 0.2;
+  const len = L.netBottomY - top;
+  for (let i = 0; i < NET_TOPO.n; i++) {
+    const p = NET_TOPO.rowOf[i] / (NET_ROWS - 1);
+    const u = (NET_TOPO.offOf[i] / NET_COLS) * 2 - 1;
+    const w = topW + (botW - topW) * p;
+    pos[i * 2] = L.rimX + (u * w) / 2;
+    // La première rangée suit l'arc avant du cercle, le reste pend.
+    pos[i * 2 + 1] = p === 0 ? L.rimY + L.rimRY * Math.sqrt(Math.max(0, 1 - u * u)) : top + len * p;
+  }
+  return pos;
+}
+
+/**
+ * Rejoue le filet pas à pas, avec deux mouvements doux (deux ressorts amortis) plutôt qu'une
+ * simulation maille par maille, qui finissait toujours en chiffon :
+ *  - un balancement latéral, entraîné par le ballon puis relâché ;
+ *  - un étirement vertical : le filet s'allonge sous le ballon, puis rebondit vers le haut
+ *    (et s'élargit quand il se raccourcit).
+ * Pendant que le ballon est dedans, les mailles qu'il touche sont repoussées sur son contour.
+ */
+function simulateNet(L: Layout, pts: TrajPoint[], dt: number, tCollide: number): Float32Array {
+  const n = NET_TOPO.n;
+  const rest = netRestPositions(L);
+  const frames = new Float32Array(pts.length * n * 2);
+  const netLen = L.netBottomY - L.rimY;
+  let sway = 0;
+  let swayV = 0;
+  let lift = 0;
+  let liftV = 0;
+
+  for (let s = 0; s < pts.length; s++) {
+    const ball = pts[s];
+    const inNet = s * dt >= tCollide
+      && ball.y > L.rimY - ball.r * 0.3
+      && ball.y < L.netBottomY + ball.r * 2
+      && Math.abs(ball.x - L.rimX) < L.rimRX * 1.4;
+
+    const k = inNet ? 900 : 340;
+    const c = inNet ? 26 : 4.5;
+    const targetSway = inNet ? (ball.x - L.rimX) * 0.7 : 0;
+    const targetLift = inNet ? clamp((ball.y - L.rimY) / netLen, 0, 1.2) * netLen * 0.24 : 0;
+    swayV += ((targetSway - sway) * k - c * swayV) * dt;
+    sway += swayV * dt;
+    liftV += ((targetLift - lift) * k - c * liftV) * dt;
+    lift += liftV * dt;
+
+    const base = s * n * 2;
+    for (let i = 0; i < n; i++) {
+      const p = NET_TOPO.rowOf[i] / (NET_ROWS - 1);
+      let x = rest[i * 2];
+      let y = rest[i * 2 + 1];
+      if (p > 0) {
+        x = L.rimX + (x - L.rimX) * (1 - (0.8 * lift * p) / netLen) + sway * Math.pow(p, 1.2);
+        y += lift * Math.pow(p, 1.5);
+        if (inNet) {
+          const br = ball.r * 1.1;
+          const dx = x - ball.x;
+          const dy = y - ball.y;
+          const d = Math.hypot(dx, dy);
+          if (d < br && d > 1e-6) {
+            x = ball.x + (dx / d) * br;
+            y = ball.y + (dy / d) * br;
+          }
+        }
+      }
+      frames[base + i * 2] = x;
+      frames[base + i * 2 + 1] = y;
+    }
+  }
+  return frames;
 }
 
 // ─── Trajectoire : calculée une fois par tir, puis simplement relue ──────────
@@ -180,7 +315,7 @@ interface TrajPoint {
   y: number;
   r: number;
   rot: number;
-  behind: boolean; // le ballon est dans le cercle : il passe derrière le filet et l'avant du cercle
+  behind: boolean; // le ballon est dans le cercle : il passe derrière l'avant du cercle
 }
 
 interface Traj {
@@ -189,6 +324,7 @@ interface Traj {
   H: number;
   dt: number;
   pts: TrajPoint[];
+  net: Float32Array | null; // positions du filet à chaque pas (tirs réussis seulement)
   tResult: number;
   duration: number;
   tEnter: number | null;
@@ -196,6 +332,8 @@ interface Traj {
 }
 
 const DT = 1 / 120;
+const MAX_DURATION = 3.8;
+const BOUNCE = 0.7; // part de vitesse conservée à chaque rebond sur le sol
 
 function buildTrajectory(shot: ShotResult, W: number, H: number): Traj {
   const L = layout(W, H);
@@ -203,9 +341,6 @@ function buildTrajectory(shot: ShotResult, W: number, H: number): Traj {
   const TF = 0.72; // durée du vol jusqu'au panier
   const S = L.start;
   const side = shot.side;
-  const rNear = W * 0.085;
-  const rFar = W * 0.06;
-  const rAt = (d: number) => rNear + (rFar - rNear) * d;
   const madeShot = isMade(shot.outcome);
   const isShort = shot.outcome === "short";
 
@@ -213,10 +348,10 @@ function buildTrajectory(shot: ShotResult, W: number, H: number): Traj {
   let ax = 0;
   let ay = 0;
   switch (shot.outcome) {
-    case "swish": ax = L.rimX + side * L.rimRX * 0.1; ay = L.rimY - rFar * 0.3; break;
-    case "made": ax = L.rimX + side * L.rimRX * 0.78; ay = L.rimY - rFar * 0.6; break;
-    case "rimout": ax = L.rimX + side * L.rimRX * 0.98; ay = L.rimY - rFar * 0.5; break;
-    case "board": ax = L.rimX + side * W * 0.25; ay = L.boardY + L.boardH * 0.3; break;
+    case "swish": ax = L.rimX + side * L.rimRX * 0.08; ay = L.rimY - L.rFar * 0.3; break;
+    case "made": ax = L.rimX + side * L.rimRX * 0.8; ay = L.rimY - L.rFar * 0.6; break;
+    case "rimout": ax = L.rimX + side * L.rimRX * 1.0; ay = L.rimY - L.rFar * 0.5; break;
+    case "board": ax = L.rimX + side * W * 0.26; ay = L.boardY + L.boardH * 0.3; break;
     default: break;
   }
 
@@ -241,14 +376,13 @@ function buildTrajectory(shot: ShotResult, W: number, H: number): Traj {
   let contacted = false;
   let tEnter: number | null = null;
   let tExit: number | null = null;
-  let rest = 0;
-  let end = 3.2;
-  const floor = isShort ? S.y : L.floorY;
-  const steps = Math.ceil(3.2 / DT);
+  let still = 0;
+  let end = MAX_DURATION;
+  const steps = Math.ceil(MAX_DURATION / DT);
 
   for (let i = 0; i <= steps; i++) {
     const t = i * DT;
-    const d = isShort ? 0.7 * Math.sin(Math.PI * clamp(t / tShort, 0, 1)) : clamp(t / TF, 0, 1);
+    let r = radiusAtY(L, y);
 
     if (!isShort && t <= TF) {
       // Vol balistique exact jusqu'au point de contact.
@@ -266,47 +400,49 @@ function buildTrajectory(shot: ShotResult, W: number, H: number): Traj {
         else if (shot.outcome === "rimout") { vx = side * W * 0.11; vy = -0.8 * H; } // ressort sur le côté
         else if (shot.outcome === "board") { vx = side * W * 0.03; vy = -0.2 * H; } // claque sur la planche
       }
+      r = radiusAtY(L, y);
       vy += g * DT;
-      const r = rAt(d);
       if (madeShot && y > L.rimY && y < L.netBottomY + r * 0.5 && Math.abs(x - L.rimX) < L.rimRX * 1.2) {
-        // Dans le filet : il guide et freine le ballon.
+        // Dans le filet : il guide et freine le ballon sans l'arrêter.
         vx += (L.rimX - x) * 60 * DT - vx * 6 * DT;
         vy *= 1 - 7 * DT;
-        vy = Math.max(vy, 0.28 * H);
+        vy = Math.max(vy, 0.34 * H);
       }
       x += vx * DT;
       y += vy * DT;
       rot += (vx / r) * DT + (isShort ? 7 * side * DT : 0);
-      if (y >= floor && vy > 0 && i > 0) {
-        y = floor;
-        vy = vy > 0.18 * H ? -vy * 0.42 : 0;
-        vx *= 0.82;
+      if (y >= S.y && vy > 0) {
+        // Sol : le ballon rebondit franchement, plusieurs fois.
+        y = S.y;
+        vy = vy > 0.2 * H ? -vy * BOUNCE : 0;
+        vx *= 0.9;
       }
-      if (y >= floor - 0.5 && vy === 0) {
-        vx *= 1 - 3 * DT;
-        rest = Math.abs(vx) < W * 0.01 ? rest + 1 : 0;
+      if (y >= S.y - 0.5 && vy === 0) {
+        vx *= 1 - 2.5 * DT;
+        still = Math.abs(vx) < W * 0.012 ? still + 1 : 0;
       }
     }
 
-    const r = rAt(d);
-    if (madeShot) {
-      // Seulement une fois arrivé au panier (le ballon part plus bas que le cercle).
-      if (t >= TF - 0.05) {
-        if (tEnter === null && y > L.rimY) tEnter = t;
-        if (tEnter !== null && tExit === null && y > L.netBottomY) tExit = t;
-      }
+    r = radiusAtY(L, y);
+    if (madeShot && t >= TF - 0.05) {
+      if (tEnter === null && y > L.rimY) tEnter = t;
+      if (tEnter !== null && tExit === null && y > L.netBottomY) tExit = t;
     }
     const behind = madeShot && tExit === null && t >= TF - 0.12 && y > L.rimY - r;
     pts.push({ x, y, r, rot, behind });
 
-    if (rest >= 10) {
+    if (still >= 10) {
       end = t;
       break;
     }
   }
 
   const tResult = madeShot ? (tEnter ?? TF) + 0.1 : isShort ? tShort * 0.6 : TF + 0.35;
-  return { id: shot.id, W, H, dt: DT, pts, tResult, duration: Math.min(end + 0.35, 3.2), tEnter, tExit };
+  const net = madeShot ? simulateNet(L, pts, DT, TF - 0.12) : null;
+  return {
+    id: shot.id, W, H, dt: DT, pts, net, tResult,
+    duration: Math.min(end + 0.4, MAX_DURATION), tEnter, tExit,
+  };
 }
 
 // ─── Dessin ──────────────────────────────────────────────────────────────────
@@ -314,26 +450,23 @@ function drawBall(ctx: CanvasRenderingContext2D, x: number, y: number, radius: n
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rotation);
-  const body = ctx.createRadialGradient(-radius * 0.4, -radius * 0.5, radius * 0.05, 0, 0, radius * 1.15);
-  body.addColorStop(0, "#FFB066");
-  body.addColorStop(0.45, "#F07A2A");
-  body.addColorStop(1, "#A8400F");
-  ctx.fillStyle = body;
+  ctx.fillStyle = C_BALL;
   ctx.beginPath();
   ctx.arc(0, 0, radius, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = "rgba(48,18,6,0.9)";
-  ctx.lineWidth = Math.max(1.2, radius * 0.07);
+  ctx.strokeStyle = C_SEAM;
+  ctx.lineCap = "round";
+  ctx.lineWidth = Math.max(1.6, radius * 0.08);
   ctx.beginPath();
   ctx.moveTo(-radius, 0);
   ctx.lineTo(radius, 0);
   ctx.moveTo(0, -radius);
   ctx.lineTo(0, radius);
-  ctx.moveTo(-radius * 0.72, -radius * 0.7);
-  ctx.bezierCurveTo(-radius * 0.28, -radius * 0.25, -radius * 0.28, radius * 0.25, -radius * 0.72, radius * 0.7);
-  ctx.moveTo(radius * 0.72, -radius * 0.7);
-  ctx.bezierCurveTo(radius * 0.28, -radius * 0.25, radius * 0.28, radius * 0.25, radius * 0.72, radius * 0.7);
+  ctx.moveTo(-radius * 0.74, -radius * 0.68);
+  ctx.bezierCurveTo(-radius * 0.3, -radius * 0.25, -radius * 0.3, radius * 0.25, -radius * 0.74, radius * 0.68);
+  ctx.moveTo(radius * 0.74, -radius * 0.68);
+  ctx.bezierCurveTo(radius * 0.3, -radius * 0.25, radius * 0.3, radius * 0.25, radius * 0.74, radius * 0.68);
   ctx.stroke();
   ctx.beginPath();
   ctx.arc(0, 0, radius, 0, Math.PI * 2);
@@ -341,65 +474,19 @@ function drawBall(ctx: CanvasRenderingContext2D, x: number, y: number, radius: n
   ctx.restore();
 }
 
-function drawNet(
-  ctx: CanvasRenderingContext2D,
-  L: Layout,
-  W: number,
-  t: number,
-  shot: ShotResult | null,
-  traj: Traj | null,
-  ball: TrajPoint | null,
-) {
-  const COLS = 7;
-  const ROWS = 8;
-  const netH = L.netBottomY - L.netTopY;
-
-  // Le ballon dans le filet le gonfle ; une fois sorti, le filet balance en s'amortissant.
-  const ballIn = !!(
-    ball && traj && shot && isMade(shot.outcome) && traj.tEnter !== null &&
-    t >= traj.tEnter - 0.05 && (traj.tExit === null || t < traj.tExit)
-  );
-  let swing = 0;
-  if (traj && shot && traj.tExit !== null && t >= traj.tExit) {
-    const k = t - traj.tExit;
-    swing = Math.exp(-k * 3) * Math.sin(k * 24) * W * (shot.outcome === "swish" ? 0.032 : 0.024);
-  }
-  const ext = ball && ballIn ? clamp(ball.y + ball.r * 0.6 - L.netBottomY, 0, ball.r * 0.9) : 0;
-
-  const pointAt = (u: number, p: number) => {
-    const baseW = L.netTopW + (L.netBottomW - L.netTopW) * p;
-    let widen = 0;
-    let shift = swing * Math.sin(p * Math.PI * 0.5) * p;
-    if (ball && ballIn) {
-      const dy = (L.netTopY + netH * p - ball.y) / (ball.r * 1.3);
-      const gauss = Math.exp(-dy * dy);
-      widen = ball.r * 1.1 * gauss;
-      shift += (ball.x - L.rimX) * gauss * 0.5 * p;
-    }
-    return {
-      x: L.rimX + (u - 0.5) * (baseW + widen) + shift,
-      y: L.netTopY + netH * p + ext * p * p,
-    };
-  };
-
+function drawNet(ctx: CanvasRenderingContext2D, L: Layout, nodes: ArrayLike<number>) {
   ctx.save();
-  ctx.strokeStyle = "rgba(240,246,255,0.8)";
-  ctx.lineWidth = 1.1 * L.unit;
+  ctx.strokeStyle = C_LINE;
+  ctx.lineWidth = 2.2 * L.unit;
+  ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  for (let i = 0; i <= COLS; i++) {
-    for (const dir of [1, -1]) {
-      ctx.beginPath();
-      let started = false;
-      for (let r = 0; r <= ROWS; r++) {
-        const p = r / ROWS;
-        const u = i / COLS + (dir * p) / COLS;
-        if (u < 0 || u > 1) { started = false; continue; }
-        const pt = pointAt(u, p);
-        if (!started) { ctx.moveTo(pt.x, pt.y); started = true; } else ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.stroke();
-    }
+  ctx.beginPath();
+  for (const [a, b, visible] of NET_TOPO.edges) {
+    if (!visible) continue;
+    ctx.moveTo(nodes[a * 2], nodes[a * 2 + 1]);
+    ctx.lineTo(nodes[b * 2], nodes[b * 2 + 1]);
   }
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -413,111 +500,77 @@ function drawScene(
 ) {
   const L = layout(W, H);
   const { unit, rimX, rimY, rimRX, rimRY } = L;
-  ctx.clearRect(0, 0, W, H);
 
-  // Fond sobre : dégradé sombre + halo derrière le panier.
-  const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, "#0A1220");
-  bg.addColorStop(0.6, "#111D30");
-  bg.addColorStop(1, "#070D17");
-  ctx.fillStyle = bg;
+  ctx.fillStyle = C_BG;
   ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C_FLOOR;
+  ctx.fillRect(0, L.floorY, W, H - L.floorY);
 
   const showResult = !!(shot && traj && t >= traj.tResult);
   const success = !!(shot && showResult && isMade(shot.outcome));
-  const glow = ctx.createRadialGradient(rimX, rimY, 4, rimX, rimY, W * 0.62);
-  glow.addColorStop(0, success ? "rgba(90,235,160,0.22)" : "rgba(255,140,70,0.16)");
-  glow.addColorStop(1, "rgba(255,140,70,0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, W, H);
 
-  // Sol.
-  const floorGrad = ctx.createLinearGradient(0, L.floorY, 0, H);
-  floorGrad.addColorStop(0, "rgba(40,62,90,0.25)");
-  floorGrad.addColorStop(1, "rgba(5,10,18,0.9)");
-  ctx.fillStyle = floorGrad;
-  ctx.fillRect(0, L.floorY, W, H - L.floorY);
-  ctx.strokeStyle = "rgba(170,193,219,0.16)";
-  ctx.lineWidth = 1.2 * unit;
-  ctx.beginPath();
-  ctx.moveTo(0, L.floorY);
-  ctx.lineTo(W, L.floorY);
-  ctx.stroke();
-
-  // Planche.
-  ctx.fillStyle = "rgba(210,228,250,0.12)";
+  // Planche : un aplat, un cadre, le carré cible qui passe au vert sur un panier.
+  ctx.fillStyle = C_BOARD;
   ctx.fillRect(L.boardX, L.boardY, L.boardW, L.boardH);
-  ctx.strokeStyle = "rgba(232,242,255,0.9)";
-  ctx.lineWidth = 2.4 * unit;
+  ctx.strokeStyle = C_LINE;
+  ctx.lineWidth = 3 * unit;
   ctx.strokeRect(L.boardX, L.boardY, L.boardW, L.boardH);
-  ctx.strokeStyle = "rgba(255,150,80,0.85)";
-  ctx.lineWidth = 2 * unit;
-  ctx.strokeRect(rimX - L.boardW * 0.17, rimY - L.boardH * 0.36, L.boardW * 0.34, L.boardH * 0.36);
+  ctx.strokeStyle = success ? C_GREEN : C_ORANGE;
+  ctx.lineWidth = 3 * unit;
+  ctx.strokeRect(rimX - L.boardW * 0.17, rimY - L.boardH * 0.38, L.boardW * 0.34, L.boardH * 0.38);
 
-  // Position du ballon à l'instant t.
-  let ball: TrajPoint | null = null;
+  // Ballon à l'instant t (au repos : à sa place de départ).
+  let ball: TrajPoint;
+  let frame = -1;
   if (traj && shot) {
-    const idx = clamp(Math.floor(t / traj.dt), 0, traj.pts.length - 1);
-    ball = traj.pts[idx];
+    frame = clamp(Math.floor(t / traj.dt), 0, traj.pts.length - 1);
+    ball = traj.pts[frame];
   } else {
-    ball = { x: L.start.x, y: L.start.y, r: W * 0.085, rot: 0, behind: false };
+    ball = { x: L.start.x, y: L.start.y, r: L.rNear, rot: 0, behind: false };
   }
 
-  const rimBack = () => {
-    ctx.strokeStyle = "#B8441A";
-    ctx.lineWidth = 5 * unit;
-    ctx.beginPath();
-    ctx.ellipse(rimX, rimY, rimRX, rimRY, 0, Math.PI, Math.PI * 2);
-    ctx.stroke();
-  };
-  const rimFront = () => {
-    ctx.strokeStyle = "#FF7A30";
-    ctx.lineWidth = 6 * unit;
-    ctx.beginPath();
-    ctx.ellipse(rimX, rimY, rimRX, rimRY, 0, 0, Math.PI);
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(255,215,175,0.8)";
-    ctx.lineWidth = 1.4 * unit;
-    ctx.beginPath();
-    ctx.ellipse(rimX, rimY + 0.8 * unit, rimRX * 0.97, rimRY * 0.9, 0, 0.15 * Math.PI, 0.85 * Math.PI);
-    ctx.stroke();
-  };
+  // Ombre sur le sol.
+  const height = Math.max(0, L.start.y - ball.y);
+  const fade = 1 - clamp(height / (H * 0.6), 0, 1);
+  ctx.fillStyle = `rgba(0,0,0,${0.35 * fade})`;
+  ctx.beginPath();
+  ctx.ellipse(ball.x, L.start.y + L.rNear * 0.92, L.rNear * (0.5 + 0.6 * fade), L.rNear * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
 
-  // Ombre portée du ballon sur le sol.
-  if (ball) {
-    const height = Math.max(0, L.floorY - ball.y);
-    const a = 0.32 * (1 - clamp(height / (H * 0.5), 0, 1));
-    const sy = Math.max(ball.y + ball.r * 0.9, L.floorY + 3 * unit);
-    ctx.fillStyle = `rgba(0,0,0,${a})`;
-    ctx.beginPath();
-    ctx.ellipse(ball.x, sy, ball.r * (1 - 0.3 * clamp(height / H, 0, 1)), ball.r * 0.28, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Ordre de dessin : arrière du cercle → ballon (s'il est dans le panier) → filet → avant du cercle → ballon.
-  rimBack();
-  if (ball && ball.behind) drawBall(ctx, ball.x, ball.y, ball.r, ball.rot);
-  drawNet(ctx, L, W, t, shot, traj, ball);
-  rimFront();
-  if (ball && !ball.behind) drawBall(ctx, ball.x, ball.y, ball.r, ball.rot);
-
-  // Résultat : une ligne, qui reste affichée jusqu'au tir suivant.
+  // Résultat : un mot, derrière le ballon, qui reste jusqu'au tir suivant.
   if (shot && traj && showResult) {
     const made = isMade(shot.outcome);
-    const fade = clamp((t - traj.tResult) / 0.2, 0, 1);
+    const a = clamp((t - traj.tResult) / 0.18, 0, 1);
     ctx.save();
-    ctx.globalAlpha = fade;
+    ctx.globalAlpha = a;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `900 ${clamp(W * 0.085, 26, 38)}px system-ui, sans-serif`;
-    ctx.lineWidth = 6 * unit;
-    ctx.strokeStyle = "rgba(3,8,15,0.8)";
-    const ly = H * 0.52 - (1 - fade) * 8;
-    ctx.strokeText(outcomeLabel(shot.outcome), W / 2, ly);
-    ctx.fillStyle = made ? "#90FFC0" : shot.outcome === "rimout" ? "#FFD49B" : "#FFAAA3";
-    ctx.fillText(outcomeLabel(shot.outcome), W / 2, ly);
+    ctx.font = `900 ${clamp(W * 0.1, 30, 46)}px system-ui, sans-serif`;
+    ctx.fillStyle = made ? C_GREEN : shot.outcome === "rimout" ? "#FFD49B" : C_RED;
+    ctx.fillText(outcomeLabel(shot.outcome), W / 2, H * 0.6 - (1 - a) * 10);
     ctx.restore();
   }
+
+  // Ordre : arrière du cercle → ballon (s'il est dans le panier) → filet → avant du cercle → ballon.
+  ctx.lineCap = "round";
+  ctx.strokeStyle = C_ORANGE_DARK;
+  ctx.lineWidth = 6 * unit;
+  ctx.beginPath();
+  ctx.ellipse(rimX, rimY, rimRX, rimRY, 0, Math.PI, Math.PI * 2);
+  ctx.stroke();
+
+  if (ball.behind) drawBall(ctx, ball.x, ball.y, ball.r, ball.rot);
+  const nodes = traj && traj.net && frame >= 0
+    ? traj.net.subarray(frame * NET_TOPO.n * 2, (frame + 1) * NET_TOPO.n * 2)
+    : netRestPositions(L);
+  drawNet(ctx, L, nodes);
+
+  ctx.strokeStyle = C_ORANGE;
+  ctx.lineWidth = 7 * unit;
+  ctx.beginPath();
+  ctx.ellipse(rimX, rimY, rimRX, rimRY, 0, 0, Math.PI);
+  ctx.stroke();
+  if (!ball.behind) drawBall(ctx, ball.x, ball.y, ball.r, ball.rot);
 }
 
 // ─── Scène animée ────────────────────────────────────────────────────────────
@@ -675,7 +728,7 @@ function useScreenWakeLock() {
 }
 
 // ─── Jeu piloté par le mouvement du téléphone, sans geste tactile ────────────
-function LancerFrancGame() {
+function LancerFrancGame({ onExit }: { onExit?: () => void }) {
   const [sensorStatus, setSensorStatus] = useState<SensorStatus>("checking");
   const [phase, setPhaseState] = useState<GamePhase>("waiting-vertical");
   const [shot, setShot] = useState<ShotResult | null>(null);
@@ -874,11 +927,24 @@ function LancerFrancGame() {
   }
 
   return (
+    // Plein écran par-dessus la page : le jeu ne dépend plus de la hauteur de son conteneur,
+    // le bandeau de stats est donc toujours visible en bas.
     <main
-      className="relative flex h-[100dvh] min-h-[100dvh] w-full flex-col overflow-hidden"
-      style={{ background: "#080F1B", color: "#F4F7FC", overscrollBehavior: "none" }}
+      className="fixed inset-0 flex flex-col overflow-hidden"
+      style={{ zIndex: 100, background: C_BG, color: "#F4F7FC", overscrollBehavior: "none", touchAction: "none" }}
     >
       <section className="relative min-h-0 flex-1" aria-label="Terrain et panier de basket">
+        {onExit && (
+          <button
+            type="button"
+            onClick={onExit}
+            aria-label="Quitter le jeu"
+            className="absolute left-2 z-10 flex h-11 w-11 items-center justify-center rounded-full text-2xl leading-none"
+            style={{ top: "calc(env(safe-area-inset-top) + 8px)", color: "rgba(233,238,247,0.55)" }}
+          >
+            ‹
+          </button>
+        )}
         <ShotScene shot={shot} onResult={handleResult} onDone={handleAnimationDone} />
 
         {hint && (
@@ -898,7 +964,7 @@ function LancerFrancGame() {
           >
             <div
               className="w-full max-w-sm rounded-3xl px-6 py-7 text-center"
-              style={{ background: "rgba(16,29,46,0.96)", border: "1px solid rgba(172,194,224,0.18)" }}
+              style={{ background: C_BOARD, border: "1px solid rgba(233,238,247,0.12)" }}
             >
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "rgba(245,126,48,0.13)", fontSize: 34 }} aria-hidden="true">
                 🏀
@@ -934,15 +1000,14 @@ function LancerFrancGame() {
         className="relative grid grid-cols-3 items-center"
         aria-label="Statistiques"
         style={{
-          minHeight: 70,
-          padding: "8px 20px calc(8px + env(safe-area-inset-bottom))",
-          background: "rgba(6,12,21,0.94)",
-          borderTop: "1px solid rgba(164,188,221,0.13)",
+          padding: "14px 20px calc(14px + env(safe-area-inset-bottom))",
+          background: "#0A0F18",
+          borderTop: "1px solid rgba(233,238,247,0.08)",
         }}
       >
-        <Stat label="Réussite" value={`${pct}%`} accent="#FF9B55" />
-        <Stat label="Série" value={stats.streak} accent={stats.streak > 0 ? "#8AFFBD" : "#EDF3FC"} />
-        <Stat label="Record" value={stats.best} accent="#EDF3FC" />
+        <Stat label="Réussite" value={`${pct}%`} accent={C_ORANGE} />
+        <Stat label="Série" value={stats.streak} accent={stats.streak > 0 ? C_GREEN : C_LINE} />
+        <Stat label="Record" value={stats.best} accent={C_LINE} />
       </footer>
     </main>
   );
@@ -951,16 +1016,16 @@ function LancerFrancGame() {
 function Stat({ label, value, accent }: { label: string; value: string | number; accent: string }) {
   return (
     <div className="min-w-0 text-center">
-      <div className="text-[22px] font-black leading-none tracking-tight tabular-nums" style={{ color: accent }}>
+      <div className="text-[30px] font-black leading-none tracking-tight tabular-nums" style={{ color: accent }}>
         {value}
       </div>
-      <div className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.2em]" style={{ color: "rgba(177,194,217,0.66)" }}>
+      <div className="mt-2 text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: "rgba(233,238,247,0.5)" }}>
         {label}
       </div>
     </div>
   );
 }
 
-export default function LancerFranc() {
-  return <LancerFrancGame />;
+export default function LancerFranc({ onExit }: { onExit?: () => void }) {
+  return <LancerFrancGame onExit={onExit} />;
 }
