@@ -182,3 +182,63 @@ export function pickWithMine(
   all.sort((a, b) => b.pct - a.pct || b.best - a.best || b.attempts - a.attempts);
   return all[0];
 }
+
+// ─── Record de série : qui détient la plus longue série, tous joueurs confondus ───────────────
+
+export interface StreakRecord {
+  label: string; // prénom du détenteur
+  best: number;
+  mine: boolean;
+}
+
+const STREAK_KEY = "lf-streak-record";
+
+function loadCachedStreakRecord(): { label: string; best: number } | null {
+  try {
+    const raw = localStorage.getItem(STREAK_KEY);
+    return raw ? (JSON.parse(raw) as { label: string; best: number }) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Détenteur du record de série. Hors ligne : dernier record connu, sinon rien. */
+export async function fetchStreakRecord(who: LFIdentity): Promise<{ label: string; best: number; id: string | null } | null> {
+  try {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select("joueuse_id,prenom,best_streak")
+      .gt("best_streak", 0)
+      .order("best_streak", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error("offline");
+    if (!data) return null;
+    const top = { label: String(data.prenom), best: data.best_streak as number, id: String(data.joueuse_id) };
+    try {
+      localStorage.setItem(STREAK_KEY, JSON.stringify({ label: top.label, best: top.best }));
+    } catch {
+      /* ignoré */
+    }
+    return top;
+  } catch {
+    const cached = loadCachedStreakRecord();
+    return cached ? { ...cached, id: null } : null;
+  }
+}
+
+/**
+ * Record à afficher : celui du serveur, sauf si ma meilleure série locale (plus fraîche) le bat
+ * strictement. À égalité, le premier à l'avoir fait garde le record.
+ */
+export function pickStreakRecord(
+  top: { label: string; best: number; id: string | null } | null,
+  who: LFIdentity,
+  myBest: number
+): StreakRecord | null {
+  if (top && top.id === who.id) {
+    return { label: who.label, best: Math.max(top.best, myBest), mine: true };
+  }
+  if (myBest > (top?.best ?? 0)) return { label: who.label, best: myBest, mine: true };
+  return top ? { label: top.label, best: top.best, mine: false } : null;
+}

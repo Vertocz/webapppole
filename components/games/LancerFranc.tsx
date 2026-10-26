@@ -8,6 +8,8 @@ import {
   mergeStats,
   pushStats,
   pullMyStats,
+  fetchStreakRecord,
+  pickStreakRecord,
   type LFIdentity,
 } from "@/lib/lancerFrancStats";
 
@@ -733,6 +735,8 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
   const [phase, setPhaseState] = useState<GamePhase>("waiting-vertical");
   const [shot, setShot] = useState<ShotResult | null>(null);
   const [stats, setStats] = useState<Stats>({ attempts: 0, makes: 0, streak: 0, best: 0 });
+  // Meilleure série connue sur le serveur (tous joueurs) : sert à afficher le recordman.
+  const [topStreak, setTopStreak] = useState<{ label: string; best: number; id: string | null } | null>(null);
   const statsRef = useRef<Stats>(stats);
   const whoRef = useRef<LFIdentity>({ id: "local", label: "Moi" });
   const shotIdRef = useRef(0);
@@ -762,6 +766,7 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
       setStats(next);
       saveLocalStats(who.id, merged);
     });
+    void fetchStreakRecord(who).then((top) => setTopStreak(top));
   }, []);
 
   useEffect(() => {
@@ -918,6 +923,8 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
     return () => window.removeEventListener("devicemotion", onMotion);
   }, [sensorStatus, changePhase]);
 
+  // Le record suit mes séries en direct : si je bats le recordman, mon prénom prend sa place.
+  const record = pickStreakRecord(topStreak, whoRef.current, stats.best);
   const pct = stats.attempts > 0 ? Math.round((stats.makes / stats.attempts) * 100) : 0;
   let hint: string | null = null;
   if (sensorStatus === "granted" && stats.attempts < 3) {
@@ -997,7 +1004,7 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
       </section>
 
       <footer
-        className="relative grid grid-cols-3 items-center"
+        className="relative grid grid-cols-3 items-start"
         aria-label="Statistiques"
         style={{
           padding: "14px 20px calc(14px + env(safe-area-inset-bottom))",
@@ -1007,13 +1014,25 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
       >
         <Stat label="Réussite" value={`${pct}%`} accent={C_ORANGE} />
         <Stat label="Série" value={stats.streak} accent={stats.streak > 0 ? C_GREEN : C_LINE} />
-        <Stat label="Record" value={stats.best} accent={C_LINE} />
+        <Stat label="Record" value={record?.best ?? 0} accent={C_LINE} sub={record?.label} subAccent={record?.mine ? C_GREEN : undefined} />
       </footer>
     </main>
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string | number; accent: string }) {
+function Stat({
+  label,
+  value,
+  accent,
+  sub,
+  subAccent,
+}: {
+  label: string;
+  value: string | number;
+  accent: string;
+  sub?: string;
+  subAccent?: string;
+}) {
   return (
     <div className="min-w-0 text-center">
       <div className="text-[30px] font-black leading-none tracking-tight tabular-nums" style={{ color: accent }}>
@@ -1022,6 +1041,11 @@ function Stat({ label, value, accent }: { label: string; value: string | number;
       <div className="mt-2 text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: "rgba(233,238,247,0.5)" }}>
         {label}
       </div>
+      {sub && (
+        <div className="mt-1 truncate text-[11px] font-semibold" style={{ color: subAccent ?? "rgba(233,238,247,0.75)" }}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
