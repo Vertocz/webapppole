@@ -75,6 +75,9 @@ export default function RoomConnect({
     hostRef.current.onMessage((msg, from) =>
       messageHandlers.current.forEach((h) => h(msg, from))
     );
+    // La liste suit les connexions réelles (un invité n'est « connecté » qu'à l'ouverture du canal,
+    // après le scan de sa réponse) : sans ça, le dernier joueur ajouté manquait au lancement.
+    hostRef.current.onPlayersChange((list) => setPlayers(list));
     setPlayers(hostRef.current.players);
     setMode("host");
     setStep("name");

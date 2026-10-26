@@ -82,9 +82,20 @@ export class HostRoom {
   peers = new Map<string, { pc: RTCPeerConnection; dc: RTCDataChannel; name: string }>();
   players: PlayerInfo[] = [{ id: "host", name: "Hôte" }];
   private handlers: MessageHandler[] = [];
+  private playersHandlers: ((players: PlayerInfo[]) => void)[] = [];
 
   onMessage(cb: MessageHandler) {
     this.handlers.push(cb);
+  }
+
+  /** Appelé à chaque arrivée / départ d'un joueur (la liste affichée doit suivre la connexion réelle). */
+  onPlayersChange(cb: (players: PlayerInfo[]) => void) {
+    this.playersHandlers.push(cb);
+  }
+
+  private emitPlayers() {
+    const snapshot = this.players.map((p) => ({ ...p }));
+    this.playersHandlers.forEach((h) => h(snapshot));
   }
 
   private emit(msg: NetMessage, from: string) {
@@ -95,7 +106,13 @@ export class HostRoom {
     const data = JSON.stringify(msg);
     for (const [id, p] of this.peers) {
       if (id === exceptPeerId) continue;
-      if (p.dc.readyState === "open") p.dc.send(data);
+      if (p.dc.readyState !== "open") continue;
+      try {
+        p.dc.send(data);
+      } catch (err) {
+        // Message trop gros ou file d'envoi pleine : on ne casse pas le jeu pour un joueur.
+        console.warn("p2pRoom: envoi impossible vers", id, err);
+      }
     }
   }
 
@@ -128,11 +145,19 @@ export class HostRoom {
 
   private setupDataChannel(peerId: string, dc: RTCDataChannel, name: string) {
     dc.onopen = () => {
+      // Le prénom saisi par l'invité arrive dans le QR de réponse (completeInvite) : il est
+      // dans `peers`, alors que `name` n'est que le prénom provisoire « Joueur N ».
+      const realName = this.peers.get(peerId)?.name ?? name;
       if (!this.players.find((p) => p.id === peerId)) {
-        this.players.push({ id: peerId, name });
+        this.players.push({ id: peerId, name: realName });
       }
-      dc.send(JSON.stringify({ type: "welcome", you: peerId, players: this.players }));
+      try {
+        dc.send(JSON.stringify({ type: "welcome", you: peerId, players: this.players }));
+      } catch (err) {
+        console.warn("p2pRoom: welcome impossible", err);
+      }
       this.broadcast({ type: "players", players: this.players }, peerId);
+      this.emitPlayers();
     };
     dc.onmessage = (ev) => {
       try {
@@ -146,6 +171,7 @@ export class HostRoom {
       this.players = this.players.filter((p) => p.id !== peerId);
       this.peers.delete(peerId);
       this.broadcast({ type: "players", players: this.players });
+      this.emitPlayers();
     };
   }
 }
@@ -166,7 +192,12 @@ export class ClientRoom {
   }
 
   send(msg: NetMessage) {
-    if (this.dc?.readyState === "open") this.dc.send(JSON.stringify(msg));
+    if (this.dc?.readyState !== "open") return;
+    try {
+      this.dc.send(JSON.stringify(msg));
+    } catch (err) {
+      console.warn("p2pRoom: envoi impossible", err);
+    }
   }
 
   private bindChannel(dc: RTCDataChannel) {
