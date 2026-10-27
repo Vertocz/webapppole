@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   getIdentity,
   loadLocalStats,
@@ -730,7 +730,25 @@ function useScreenWakeLock() {
 }
 
 // ─── Jeu piloté par le mouvement du téléphone, sans geste tactile ────────────
-function LancerFrancGame({ onExit }: { onExit?: () => void }) {
+/**
+ * Mode duel : le composant ne gère plus de statistiques, il signale seulement chaque tir
+ * (réussi ou non) et n'accepte de geste que lorsque `enabled` est vrai.
+ */
+export interface DuelOptions {
+  enabled: boolean;
+  /** Change à chaque nouveau duel : remet le ballon en place et exige la verticale. */
+  duelKey: number;
+  onShot: (made: boolean, duelKey: number) => void;
+  /** Contenu affiché par-dessus le terrain (messages, attente…). */
+  overlay?: ReactNode;
+  /** Remplace le bandeau de statistiques. */
+  footer?: ReactNode;
+}
+
+function LancerFrancGame({ onExit, duel }: { onExit?: () => void; duel?: DuelOptions }) {
+  const duelRef = useRef<DuelOptions | undefined>(duel);
+  duelRef.current = duel;
+  const shotDuelKeyRef = useRef(0);
   const [sensorStatus, setSensorStatus] = useState<SensorStatus>("checking");
   const [phase, setPhaseState] = useState<GamePhase>("waiting-vertical");
   const [shot, setShot] = useState<ShotResult | null>(null);
@@ -751,6 +769,7 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
 
   // Stats « de tout le temps » : locales d'abord, fusionnées avec le serveur si le réseau répond.
   useEffect(() => {
+    if (duelRef.current) return;
     const who = getIdentity();
     whoRef.current = who;
     const local = loadLocalStats(who.id);
@@ -768,6 +787,14 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
     });
     void fetchStreakRecord(who).then((top) => setTopStreak(top));
   }, []);
+
+  const duelEnabled = duel?.enabled ?? true;
+  const duelKey = duel?.duelKey ?? 0;
+  useEffect(() => {
+    if (!duelRef.current) return;
+    setShot(null);
+    changePhase("waiting-vertical");
+  }, [duelEnabled, duelKey, changePhase]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.DeviceMotionEvent === "undefined") {
@@ -792,6 +819,8 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
 
   const handleShoot = useCallback((peakPush: number, angleDeg: number, flick: number | null) => {
     if (phaseRef.current !== "measuring") return;
+    if (duelRef.current && !duelRef.current.enabled) return;
+    shotDuelKeyRef.current = duelRef.current?.duelKey ?? 0;
     shotIdRef.current += 1;
     const next = decideShot(shotIdRef.current, peakPush, angleDeg, flick);
     changePhase("animating");
@@ -804,6 +833,10 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
   const handleResult = useCallback((outcome: Outcome) => {
     if (phaseRef.current !== "animating") return;
     const made = isMade(outcome);
+    if (duelRef.current) {
+      duelRef.current.onShot(made, shotDuelKeyRef.current);
+      return;
+    }
     const prev = statsRef.current;
     const streak = made ? prev.streak + 1 : 0;
     const next: Stats = {
@@ -835,6 +868,10 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
 
     const onMotion = (event: DeviceMotionEvent) => {
       const now = performance.now();
+      if (duelRef.current && !duelRef.current.enabled) {
+        verticalSince = null;
+        return;
+      }
       const gravity = event.accelerationIncludingGravity;
       const linear = event.acceleration;
       let ax = 0;
@@ -927,7 +964,7 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
   const record = pickStreakRecord(topStreak, whoRef.current, stats.best);
   const pct = stats.attempts > 0 ? Math.round((stats.makes / stats.attempts) * 100) : 0;
   let hint: string | null = null;
-  if (sensorStatus === "granted" && stats.attempts < 3) {
+  if (sensorStatus === "granted" && (duel ? duel.enabled : stats.attempts < 3)) {
     if (phase === "waiting-vertical") hint = "TIENS LE TÉLÉPHONE À LA VERTICALE";
     else if (phase === "ready") hint = "POUSSE VERS LE HAUT, CASSE LE POIGNET";
     else if (phase === "waiting-reset") hint = "REMETS LE TÉLÉPHONE À LA VERTICALE";
@@ -953,6 +990,7 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
           </button>
         )}
         <ShotScene shot={shot} onResult={handleResult} onDone={handleAnimationDone} />
+        {duel?.overlay}
 
         {hint && (
           <div
@@ -1003,7 +1041,7 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
         )}
       </section>
 
-      <footer
+      {duel ? duel.footer : <footer
         className="relative grid grid-cols-3 items-start"
         aria-label="Statistiques"
         style={{
@@ -1015,7 +1053,7 @@ function LancerFrancGame({ onExit }: { onExit?: () => void }) {
         <Stat label="Réussite" value={`${pct}%`} accent={C_ORANGE} />
         <Stat label="Série" value={stats.streak} accent={stats.streak > 0 ? C_GREEN : C_LINE} />
         <Stat label="Record" value={record?.best ?? 0} accent={C_LINE} sub={record?.label} subAccent={record?.mine ? C_GREEN : undefined} />
-      </footer>
+      </footer>}
     </main>
   );
 }
@@ -1048,6 +1086,10 @@ function Stat({
       )}
     </div>
   );
+}
+
+export function LancerFrancDuel({ onExit, duel }: { onExit?: () => void; duel: DuelOptions }) {
+  return <LancerFrancGame onExit={onExit} duel={duel} />;
 }
 
 export default function LancerFranc({ onExit }: { onExit?: () => void }) {
