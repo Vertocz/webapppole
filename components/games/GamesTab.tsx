@@ -5,6 +5,7 @@ import RoomConnect, { RoomContext } from "./RoomConnect";
 import Connect4 from "./Connect4";
 import Bomberman from "./Bomberman";
 import LuckyLuke from "./LuckyLuke";
+import Quiz from "./Quiz";
 import LancerFranc from "./LancerFranc";
 import GarticPhone from "./GarticPhone";
 import type { NetMessage } from "@/lib/p2pRoom";
@@ -136,7 +137,7 @@ function NetworkedGames({
 
 // ─── Point d'entrée ────────────────────────────────────────────────────────────
 export default function GamesTab() {
-  const [mode, setMode] = useState<"menu" | "lancerfranc" | "networked" | "gartic" | "lucky">("menu");
+  const [mode, setMode] = useState<"menu" | "lancerfranc" | "networked" | "gartic" | "lucky" | "quiz">("menu");
   const [initialGame, setInitialGame] = useState<NetGameId | null>(null);
   const [connectionKey, setConnectionKey] = useState(0);
 
@@ -155,6 +156,10 @@ export default function GamesTab() {
     return (
       <LancerFranc onExit={() => setMode("menu")} />
     );
+  }
+
+  if (mode === "quiz") {
+    return <Quiz onExit={() => setMode("menu")} />;
   }
 
   if (mode === "lucky") {
@@ -238,6 +243,19 @@ export default function GamesTab() {
           <span className="text-3xl">🏀</span>
           <span className="text-sm font-medium" style={{ color: "var(--text-main)" }}>
             Lancer franc
+          </span>
+        </button>
+        <button
+          onClick={() => setMode("quiz")}
+          className="rounded-2xl p-5 flex flex-col items-center gap-2 text-center transition-all active:scale-95"
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)" }}
+        >
+          <span className="text-3xl">❓</span>
+          <span className="text-sm font-medium" style={{ color: "var(--text-main)" }}>
+            Quiz
+          </span>
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+            Questions du staff
           </span>
         </button>
         <button
