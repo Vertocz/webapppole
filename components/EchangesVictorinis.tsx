@@ -243,7 +243,7 @@ const btnNeutre = {
 
 /* ─────────────────────── Assistant de proposition ─────────────────────── */
 
-type Etape = "hub" | "souhait" | "destinataire" | "offre" | "envoye";
+type Etape = "hub" | "souhait" | "destinataire" | "personne" | "cartesDe" | "offre" | "envoye";
 
 export function EchangeModal({
   moi,
@@ -264,6 +264,8 @@ export function EchangeModal({
   const [envoyees, setEnvoyees] = useState<Echange[]>([]);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  // true quand on est parti de la personne (et pas des cartes souhaitées)
+  const [parPersonne, setParPersonne] = useState(false);
 
   const charger = useCallback(async () => {
     const [c, e] = await Promise.all([getCollections(), getEnvoyees(moi.id, moi.type)]);
@@ -327,13 +329,30 @@ export function EchangeModal({
         titre="ÉCHANGES"
         onClose={onClose}
         pied={
-          <button
-            onClick={() => setEtape("souhait")}
-            className="flex-1 py-3 rounded-xl font-medium"
-            style={btnPlein}
-          >
-            Nouvelle proposition
-          </button>
+          <>
+            <button
+              onClick={() => {
+                setParPersonne(true);
+                setSouhait({});
+                setEtape("personne");
+              }}
+              className="flex-1 py-3 rounded-xl text-sm"
+              style={btnNeutre}
+            >
+              Voir les cartes de quelqu&apos;un
+            </button>
+            <button
+              onClick={() => {
+                setParPersonne(false);
+                setSouhait({});
+                setEtape("souhait");
+              }}
+              className="flex-1 py-3 rounded-xl text-sm font-medium"
+              style={btnPlein}
+            >
+              Chercher des cartes
+            </button>
+          </>
         }
       >
         <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
@@ -414,6 +433,90 @@ export function EchangeModal({
     );
   }
 
+  /* ── Choisir une personne ── */
+  if (etape === "personne") {
+    return (
+      <Feuille
+        titre="AVEC QUI ÉCHANGER ?"
+        onClose={onClose}
+        pied={
+          <button onClick={() => setEtape("hub")} className="px-4 py-3 rounded-xl" style={btnNeutre}>
+            Retour
+          </button>
+        }
+      >
+        <div className="space-y-2">
+          {autres.map((p) => {
+            const coll = collections[cleUser(p.id, p.type)] ?? {};
+            const nb = Object.values(coll).reduce((a, b) => a + b, 0);
+            const diff = Object.keys(coll).length;
+            return (
+              <button
+                key={cleUser(p.id, p.type)}
+                onClick={() => {
+                  setCible(p);
+                  setSouhait({});
+                  setEtape("cartesDe");
+                }}
+                className="w-full text-left rounded-xl p-3 flex items-center justify-between transition-transform active:scale-[0.99]"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)" }}
+              >
+                <span className="font-medium" style={{ color: "var(--text-main)" }}>
+                  {p.prenom} {p.nom}
+                </span>
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {nb} carte{nb > 1 ? "s" : ""} · {diff} différente{diff > 1 ? "s" : ""}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Feuille>
+    );
+  }
+
+  /* ── Les cartes de la personne choisie ── */
+  if (etape === "cartesDe" && cible) {
+    const sesCartes = collections[cleUser(cible.id, cible.type)] ?? {};
+    const nb = Object.values(souhait).reduce((a, b) => a + b, 0);
+    const aDesCartes = Object.keys(sesCartes).length > 0;
+    return (
+      <Feuille
+        titre={`LES CARTES DE ${cible.prenom.toUpperCase()}`}
+        onClose={onClose}
+        pied={
+          <>
+            <button onClick={() => setEtape("personne")} className="px-4 py-3 rounded-xl" style={btnNeutre}>
+              Retour
+            </button>
+            <button
+              disabled={nb === 0}
+              onClick={() => {
+                setOffre({});
+                setErreur(null);
+                setEtape("offre");
+              }}
+              className="flex-1 py-3 rounded-xl font-medium disabled:opacity-40"
+              style={btnPlein}
+            >
+              Je les veux ({nb})
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm mb-3" style={{ color: "var(--text-muted)" }}>
+          Le chiffre à droite indique combien d&apos;exemplaires {cible.prenom} possède. Choisis ceux que tu voudrais.
+        </p>
+        {!aDesCartes && (
+          <p className="text-sm mb-3 px-3 py-2 rounded-xl" style={{ background: "var(--bg-input)", color: "var(--text-main)" }}>
+            {cible.prenom} n&apos;a pas encore de carte.
+          </p>
+        )}
+        <Selecteur value={souhait} onChange={setSouhait} max={sesCartes} />
+      </Feuille>
+    );
+  }
+
   /* ── 2. Qui les a ? ── */
   if (etape === "destinataire") {
     const totalVoulu = candidats[0]?.totalVoulu ?? 0;
@@ -482,7 +585,11 @@ export function EchangeModal({
         onClose={onClose}
         pied={
           <>
-            <button onClick={() => setEtape("destinataire")} className="px-4 py-3 rounded-xl" style={btnNeutre}>
+            <button
+              onClick={() => setEtape(parPersonne ? "cartesDe" : "destinataire")}
+              className="px-4 py-3 rounded-xl"
+              style={btnNeutre}
+            >
               Retour
             </button>
             <button
