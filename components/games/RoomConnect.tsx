@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HostRoom, ClientRoom, NetMessage, PlayerInfo } from "@/lib/p2pRoom";
 import { RealtimeRoom, generateRoomCode } from "@/lib/realtimeRoom";
+import { getIdentity } from "@/lib/lancerFrancStats";
 import QRCodeDisplay from "./QRCodeDisplay";
 import QRScanner from "./QRScanner";
 
@@ -20,6 +21,7 @@ type Transport = "local" | "internet";
 
 type Step =
   | "choice"
+  | "preparing"
   | "internet-lobby"
   | "name"
   | "host-lobby"
@@ -41,6 +43,8 @@ export default function RoomConnect({
   const [step, setStep] = useState<Step>("choice");
   const [mode, setMode] = useState<"host" | "client" | null>(null);
   const [name, setName] = useState("");
+  // Prénom du compte connecté : on ne le redemande pas.
+  const [knownName, setKnownName] = useState<string | null>(null);
   const [players, setPlayers] = useState<PlayerInfo[]>([]);
   const [invitePayload, setInvitePayload] = useState<string | null>(null);
   const [pendingPeerId, setPendingPeerId] = useState<string | null>(null);
@@ -52,6 +56,14 @@ export default function RoomConnect({
   const [joinCode, setJoinCode] = useState("");
   const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const who = getIdentity();
+    if (who.id !== "local" && who.label) {
+      setKnownName(who.label);
+      setName(who.label);
+    }
+  }, []);
 
   const realtimeRef = useRef<RealtimeRoom | null>(null);
   const readyRef = useRef(false);
@@ -84,13 +96,16 @@ export default function RoomConnect({
     hostRef.current.onPlayersChange((list) => setPlayers(list));
     setPlayers(hostRef.current.players);
     setMode("host");
-    setStep("name");
+    if (knownName) {
+      setStep("preparing");
+      void confirmNameHost();
+    } else setStep("name");
   };
 
   const startClient = () => {
     clientRef.current = new ClientRoom();
     setMode("client");
-    setStep("name");
+    setStep(knownName ? "join-scan-offer" : "name");
   };
 
   const soloMode = () => {
@@ -118,6 +133,7 @@ export default function RoomConnect({
       setStep("host-lobby");
     } catch {
       setError("Impossible de créer l'invitation. Réessaie.");
+      setStep((cur) => (cur === "preparing" ? "choice" : cur));
     }
   };
 
@@ -163,8 +179,10 @@ export default function RoomConnect({
   // ── Mode internet (Supabase Realtime) ─────────────────────────────────────
   const startInternetHost = () => {
     setMode("host");
-    setRoomCode(generateRoomCode());
-    setStep("name");
+    const code = generateRoomCode();
+    setRoomCode(code);
+    if (knownName) void connectInternet(code, true);
+    else setStep("name");
   };
 
   const startInternetClient = () => {
@@ -325,15 +343,27 @@ export default function RoomConnect({
         </div>
       )}
 
+      {step === "preparing" && (
+        <p className="text-sm text-center py-6" style={{ color: "var(--text-muted)" }}>
+          Préparation de l&apos;invitation…
+        </p>
+      )}
+
       {step === "name" && (
         <div className="space-y-3">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Ton prénom"
-            className="w-full px-4 py-3 rounded-xl outline-none text-sm"
-            style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" }}
-          />
+          {knownName ? (
+            <p className="text-sm text-center" style={{ color: "var(--text-muted)" }}>
+              Tu joues en tant que <span style={{ color: "var(--text-main)", fontWeight: 600 }}>{knownName}</span>
+            </p>
+          ) : (
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ton prénom"
+              className="w-full px-4 py-3 rounded-xl outline-none text-sm"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" }}
+            />
+          )}
           {transport === "internet" && mode === "client" && (
             <input
               value={joinCode}
