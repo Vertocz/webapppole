@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import CarteModal from "@/components/CarteModal";
+import { EchangeModal, EchangesNotifs } from "@/components/EchangesVictorinis";
+import { getParticipants, type Participant } from "@/lib/victorinisEchanges";
 import {
   PERSONNES,
   RARETE_COLOR,
@@ -38,6 +40,10 @@ const CARD_H =
 export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Props) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const participe = participants.some((p) => p.id === userId && p.type === userType);
+  const [echangeOuvert, setEchangeOuvert] = useState(false);
+  const [rechargement, setRechargement] = useState(0);
   const [apercu, setApercu] = useState<{ personne: string; rarete: Rarete; raretes: Rarete[] } | null>(null);
 
   useEffect(() => {
@@ -50,7 +56,12 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
     return () => {
       annule = true;
     };
-  }, [userId, userType, refreshKey]);
+  }, [userId, userType, refreshKey, rechargement]);
+
+  // Seuls les 5 joueurs et les 2 coachs peuvent échanger
+  useEffect(() => {
+    getParticipants().then(setParticipants);
+  }, []);
 
   const distinctes = Object.keys(counts).length;
 
@@ -130,13 +141,24 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between px-1">
-        <p className="font-display text-lg leading-none" style={{ color: "var(--text-main)" }}>
-          MES CARTES VICTORINIS
-        </p>
-        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          {loading ? "Chargement…" : `${distinctes}/${TOTAL_CARTES} cartes`}
-        </p>
+      <div className="flex items-center justify-between gap-2 px-1">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <p className="font-display text-lg leading-none whitespace-nowrap" style={{ color: "var(--text-main)" }}>
+            MES CARTES VICTORINIS
+          </p>
+          <p className="text-xs whitespace-nowrap" style={{ color: "var(--text-muted)" }}>
+            {loading ? "…" : `${distinctes}/${TOTAL_CARTES}`}
+          </p>
+        </div>
+        {participe && (
+          <button
+            onClick={() => setEchangeOuvert(true)}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium active:scale-95 transition-transform"
+            style={{ background: "var(--bg-input)", color: "var(--text-main)", border: "1px solid var(--border)" }}
+          >
+            🔄 Échanger
+          </button>
+        )}
       </div>
 
       <Titre>Joueurs</Titre>
@@ -147,6 +169,23 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
 
       <Titre>Coachs</Titre>
       <Rangee gens={COACHES} />
+
+      {participe && (
+        <EchangesNotifs
+          moi={{ id: userId, type: userType }}
+          refreshKey={refreshKey + rechargement}
+          onChange={() => setRechargement((n) => n + 1)}
+        />
+      )}
+
+      {echangeOuvert && (
+        <EchangeModal
+          moi={{ id: userId, type: userType }}
+          participants={participants}
+          onClose={() => setEchangeOuvert(false)}
+          onChange={() => setRechargement((n) => n + 1)}
+        />
+      )}
 
       {apercu && (
         <CarteModal
