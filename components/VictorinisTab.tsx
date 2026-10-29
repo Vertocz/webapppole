@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import CarteModal from "@/components/CarteModal";
+import PaquetModal from "@/components/PaquetModal";
 import { EchangeModal, EchangesNotifs } from "@/components/EchangesVictorinis";
 import { getParticipants, type Participant } from "@/lib/victorinisEchanges";
 import {
@@ -11,6 +12,9 @@ import {
   TOTAL_CARTES,
   getCarteUrl,
   getCollection,
+  getDerniereOuverture,
+  ouvrirPaquet,
+  type CarteGagnee,
   type Personne,
   type Rarete,
   type UserTypeCarte,
@@ -35,7 +39,7 @@ const COACHES = PERSONNES.filter((p) => p.role === "coach");
  * permet la largeur (3 cartes côte à côte, ratio 2:3).
  */
 const CARD_H =
-  "max(90px, min(calc((100dvh - 330px) / 3), calc((min(100vw, 42rem) - 48px) / 2)))";
+  "max(90px, min(calc((100dvh - 372px) / 3), calc((min(100vw, 42rem) - 48px) / 2)))";
 
 export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Props) {
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -43,6 +47,11 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
   const [participants, setParticipants] = useState<Participant[]>([]);
   const participe = participants.some((p) => p.id === userId && p.type === userType);
   const [echangeOuvert, setEchangeOuvert] = useState(false);
+  const [paquet, setPaquet] = useState<CarteGagnee[] | null>(null);
+  const [prochaine, setProchaine] = useState<number | null>(null); // timestamp ms
+  const [maintenant, setMaintenant] = useState(() => Date.now());
+  const [ouverture, setOuverture] = useState(false);
+  const [erreurPaquet, setErreurPaquet] = useState<string | null>(null);
   const [rechargement, setRechargement] = useState(0);
   const [apercu, setApercu] = useState<{ personne: string; rarete: Rarete; raretes: Rarete[] } | null>(null);
 
@@ -57,6 +66,37 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
       annule = true;
     };
   }, [userId, userType, refreshKey, rechargement]);
+
+  // Délai avant la prochaine ouverture de paquet (1 h)
+  useEffect(() => {
+    getDerniereOuverture(userId, userType).then((d) => setProchaine(d ? d.getTime() + 3600_000 : null));
+  }, [userId, userType]);
+
+  useEffect(() => {
+    const t = setInterval(() => setMaintenant(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const minutesRestantes = prochaine && prochaine > maintenant ? Math.ceil((prochaine - maintenant) / 60_000) : 0;
+
+  const ouvrir = async () => {
+    setOuverture(true);
+    setErreurPaquet(null);
+    const res = await ouvrirPaquet(userId, userType);
+    setOuverture(false);
+    if (res.error || !res.cartes) {
+      // Probablement ouvert depuis un autre appareil : on resynchronise le délai
+      const d = await getDerniereOuverture(userId, userType);
+      setProchaine(d ? d.getTime() + 3600_000 : null);
+      setMaintenant(Date.now());
+      setErreurPaquet("Ton prochain paquet n'est pas encore disponible.");
+      return;
+    }
+    setProchaine(Date.now() + 3600_000);
+    setMaintenant(Date.now());
+    setPaquet(res.cartes);
+    setRechargement((n) => n + 1);
+  };
 
   // Seuls les 5 joueurs et les 2 coachs peuvent échanger
   useEffect(() => {
@@ -150,16 +190,40 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
             {loading ? "…" : `${distinctes}/${TOTAL_CARTES}`}
           </p>
         </div>
-        {participe && (
+      </div>
+
+      {participe && (
+        <div className="flex gap-2">
+          <button
+            disabled={minutesRestantes > 0 || ouverture}
+            onClick={ouvrir}
+            className="flex-1 py-2 rounded-lg text-xs font-medium active:scale-95 transition-transform disabled:opacity-60"
+            style={
+              minutesRestantes > 0
+                ? { background: "var(--bg-input)", color: "var(--text-muted)", border: "1px solid var(--border)" }
+                : { background: "linear-gradient(135deg, #B8860B, #F2B90F)", color: "#111" }
+            }
+          >
+            {ouverture
+              ? "Ouverture…"
+              : minutesRestantes > 0
+              ? `🎁 Ouvrir · dans ${minutesRestantes} min`
+              : "🎁 Ouvrir un paquet"}
+          </button>
           <button
             onClick={() => setEchangeOuvert(true)}
-            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium active:scale-95 transition-transform"
+            className="flex-1 py-2 rounded-lg text-xs font-medium active:scale-95 transition-transform"
             style={{ background: "var(--bg-input)", color: "var(--text-main)", border: "1px solid var(--border)" }}
           >
             🔄 Échanger
           </button>
-        )}
-      </div>
+        </div>
+      )}
+      {erreurPaquet && (
+        <p className="text-xs text-center" style={{ color: "var(--text-muted)" }}>
+          {erreurPaquet}
+        </p>
+      )}
 
       <Titre>Joueurs</Titre>
       <div className="flex flex-col gap-2">
@@ -186,6 +250,8 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
           onChange={() => setRechargement((n) => n + 1)}
         />
       )}
+
+      {paquet && <PaquetModal cartes={paquet} onClose={() => setPaquet(null)} />}
 
       {apercu && (
         <CarteModal

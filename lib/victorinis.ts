@@ -111,3 +111,34 @@ export async function getCollection(
   });
   return counts;
 }
+
+/** Ouvre un paquet de 3 cartes (une fois par heure, contrôlé côté serveur). */
+export async function ouvrirPaquet(
+  userId: string,
+  userType: UserTypeCarte
+): Promise<{ cartes?: CarteGagnee[]; error?: string }> {
+  const { data, error } = await supabase.rpc("ouvrir_paquet", {
+    p_user_id: userId,
+    p_user_type: userType,
+  });
+  if (error) return { error: error.message };
+  const cartes = ((data ?? []) as { out_personne: string; out_rarete: Rarete }[]).map((r) => ({
+    personne: r.out_personne,
+    rarete: r.out_rarete,
+  }));
+  return { cartes };
+}
+
+/** Moment de la dernière ouverture de paquet (null si jamais ouvert). */
+export async function getDerniereOuverture(
+  userId: string,
+  userType: UserTypeCarte
+): Promise<Date | null> {
+  const { data } = await supabase
+    .from("victorinis_ouvertures")
+    .select("derniere")
+    .eq("user_id", userId)
+    .eq("user_type", userType)
+    .maybeSingle();
+  return data?.derniere ? new Date(data.derniere) : null;
+}
