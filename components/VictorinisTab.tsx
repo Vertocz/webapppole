@@ -53,7 +53,6 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
   }, [userId, userType, refreshKey]);
 
   const distinctes = Object.keys(counts).length;
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
   /** Meilleure carte possédée par une personne (or > argent > bleu) */
   const meilleure = (p: Personne): { rarete: Rarete; n: number } | null => {
@@ -98,9 +97,7 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
           background: "var(--bg-input)",
           boxShadow: best.rarete === "or" ? "0 0 14px rgba(242,185,15,0.45)" : undefined,
         }}
-        aria-label={`${p.prenom} ${p.nom}, carte ${RARETE_LABEL[best.rarete]}${
-          best.n > 1 ? `, ${best.n} exemplaires` : ""
-        }`}
+        aria-label={`${p.prenom} ${p.nom}, carte ${RARETE_LABEL[best.rarete]}`}
       >
         <img
           src={getCarteUrl(p.slug, best.rarete, 300)}
@@ -108,14 +105,6 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
           decoding="async"
           className="w-full h-full object-cover"
         />
-        {best.n > 1 && (
-          <span
-            className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-[11px] font-bold leading-none"
-            style={{ background: color, color: best.rarete === "bleu" ? "white" : "#111" }}
-          >
-            ×{best.n}
-          </span>
-        )}
       </button>
     );
   };
@@ -140,7 +129,7 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
           MES VICTORINIS
         </p>
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          {loading ? "Chargement…" : `${distinctes}/${TOTAL_CARTES} cartes · ${total} au total`}
+          {loading ? "Chargement…" : `${distinctes}/${TOTAL_CARTES} cartes`}
         </p>
       </div>
 
