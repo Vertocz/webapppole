@@ -51,6 +51,113 @@ function decodePayload<T = unknown>(str: string): T {
   return JSON.parse(json) as T;
 }
 
+// ─── Format compact des QR codes ─────────────────────────────────────────────
+// Un SDP complet fait ~600 caractères : QR version 19 (93×93 modules), trop dense pour
+// la caméra d'un téléphone. On n'envoie que ce qui varie (identifiants ICE, empreinte,
+// adresses) et le reste est reconstruit à l'arrivée : ~120 caractères, QR version ~6.
+// Si le SDP sort du schéma attendu (autre navigateur…), on retombe sur l'ancien format.
+
+interface Signal {
+  kind: "offer" | "answer";
+  /** peerId pour une offre, prénom du joueur pour une réponse */
+  extra: string;
+  sdp: RTCSessionDescriptionInit;
+}
+
+const KNOWN_FIXED_LINES = [
+  /^v=0$/,
+  /^o=.* IN IP4 127\.0\.0\.1$/,
+  /^s=-$/,
+  /^t=0 0$/,
+  /^a=group:BUNDLE 0$/,
+  /^a=extmap-allow-mixed$/,
+  /^a=msid-semantic: ?WMS ?\*?$/,
+  /^m=application 9 UDP\/DTLS\/SCTP webrtc-datachannel$/,
+  /^c=IN IP4 0\.0\.0\.0$/,
+  /^a=ice-options:trickle$/,
+  /^a=setup:(actpass|active)$/,
+  /^a=mid:0$/,
+  /^a=sctp-port:5000$/,
+  /^a=max-message-size:262144$/,
+];
+
+function hexToB64(hex: string): string {
+  const bytes = hex.split(":").map((h) => parseInt(h, 16));
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function b64ToHex(b64: string): string {
+  return Array.from(atob(b64))
+    .map((c) => c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"))
+    .join(":");
+}
+
+function sdpToCompact(kind: "offer" | "answer", extra: string, desc: RTCSessionDescriptionInit): string | null {
+  const text = desc.sdp;
+  if (!text || desc.type !== kind) return null;
+  let ufrag = "";
+  let pwd = "";
+  let fp = "";
+  const cands: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line) continue;
+    let m: RegExpMatchArray | null;
+    if ((m = line.match(/^a=ice-ufrag:(\S+)$/))) ufrag = m[1];
+    else if ((m = line.match(/^a=ice-pwd:(\S+)$/))) pwd = m[1];
+    else if ((m = line.match(/^a=fingerprint:sha-256 ([0-9A-Fa-f:]+)$/))) fp = hexToB64(m[1]);
+    else if ((m = line.match(/^a=candidate:\S+ 1 udp (\d+) (\S+) (\d+) typ host(?: generation \d+)?(?: network-id \d+)?(?: network-cost \d+)?(?: ufrag \S+)?$/))) {
+      cands.push(`${m[1]},${m[2]},${m[3]}`);
+    } else if (!KNOWN_FIXED_LINES.some((re) => re.test(line))) return null;
+  }
+  if (!ufrag || !pwd || !fp || cands.length === 0) return null;
+  if (/[|;]/.test(ufrag + pwd + fp)) return null;
+  const out = `~${kind === "offer" ? "o" : "a"}|${encodeURIComponent(extra)}|${ufrag}|${pwd}|${fp}|${cands.join(";")}`;
+  return out;
+}
+
+function compactToSignal(str: string): Signal {
+  const [k, extra, ufrag, pwd, fp, cands] = str.slice(1).split("|");
+  if (!ufrag || !pwd || !fp || !cands) throw new Error("QR compact invalide");
+  const kind = k === "o" ? "offer" : "answer";
+  const lines = [
+    "v=0",
+    "o=- 1 2 IN IP4 127.0.0.1",
+    "s=-",
+    "t=0 0",
+    "a=group:BUNDLE 0",
+    "a=extmap-allow-mixed",
+    "a=msid-semantic: WMS",
+    "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+    "c=IN IP4 0.0.0.0",
+    ...cands.split(";").map((c, i) => {
+      const [prio, addr, port] = c.split(",");
+      return `a=candidate:${i + 1} 1 udp ${prio} ${addr} ${port} typ host generation 0`;
+    }),
+    `a=ice-ufrag:${ufrag}`,
+    `a=ice-pwd:${pwd}`,
+    "a=ice-options:trickle",
+    `a=fingerprint:sha-256 ${b64ToHex(fp)}`,
+    `a=setup:${kind === "offer" ? "actpass" : "active"}`,
+    "a=mid:0",
+    "a=sctp-port:5000",
+    "a=max-message-size:262144",
+  ];
+  return { kind, extra: decodeURIComponent(extra ?? ""), sdp: { type: kind, sdp: lines.join("\r\n") + "\r\n" } };
+}
+
+function encodeSignal(kind: "offer" | "answer", extra: string, desc: RTCSessionDescriptionInit | null): string {
+  if (!desc) throw new Error("Description locale absente");
+  const compact = sdpToCompact(kind, extra, desc);
+  if (compact) return compact;
+  return encodePayload(kind === "offer" ? { kind, peerId: extra, sdp: desc } : { kind, name: extra, sdp: desc });
+}
+
+function decodeSignal(str: string): Signal {
+  if (str.startsWith("~")) return compactToSignal(str);
+  const d = decodePayload<{ kind: "offer" | "answer"; peerId?: string; name?: string; sdp: RTCSessionDescriptionInit }>(str);
+  return { kind: d.kind, extra: (d.kind === "offer" ? d.peerId : d.name) ?? "", sdp: d.sdp };
+}
+
 function newId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -128,18 +235,17 @@ export class HostRoom {
     await pc.setLocalDescription(offer);
     await waitIceComplete(pc);
 
-    const qrPayload = encodePayload({ kind: "offer", peerId, sdp: pc.localDescription });
+    const qrPayload = encodeSignal("offer", peerId, pc.localDescription);
     return { peerId, qrPayload };
   }
 
   /** Termine l'invitation une fois la réponse (QR scanné) du joueur reçue */
   async completeInvite(peerId: string, answerQrPayload: string) {
-    const decoded = decodePayload<{ kind: string; sdp: RTCSessionDescriptionInit; name: string }>(
-      answerQrPayload
-    );
+    const decoded = decodeSignal(answerQrPayload);
+    if (decoded.kind !== "answer") throw new Error("Ce QR n'est pas une réponse");
     const entry = this.peers.get(peerId);
     if (!entry) throw new Error("Invitation inconnue ou expirée");
-    if (decoded.name) entry.name = decoded.name;
+    if (decoded.extra) entry.name = decoded.extra;
     await entry.pc.setRemoteDescription(decoded.sdp);
   }
 
@@ -214,13 +320,12 @@ export class ClientRoom {
 
   /** À partir du QR de l'hôte (offer), génère la réponse (answer) à réafficher en QR */
   async joinFromOffer(offerQrPayload: string, myName: string): Promise<string> {
-    const decoded = decodePayload<{ kind: string; peerId: string; sdp: RTCSessionDescriptionInit }>(
-      offerQrPayload
-    );
+    const decoded = decodeSignal(offerQrPayload);
+    if (decoded.kind !== "offer") throw new Error("Ce QR n'est pas une invitation");
     await this.pc.setRemoteDescription(decoded.sdp);
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
     await waitIceComplete(this.pc);
-    return encodePayload({ kind: "answer", sdp: this.pc.localDescription, name: myName });
+    return encodeSignal("answer", myName, this.pc.localDescription);
   }
 }
