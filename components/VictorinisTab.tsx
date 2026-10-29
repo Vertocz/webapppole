@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Card from "@/components/Card";
+import { useEffect, useState } from "react";
 import CarteModal from "@/components/CarteModal";
 import {
   PERSONNES,
@@ -10,7 +9,7 @@ import {
   TOTAL_CARTES,
   getCarteUrl,
   getCollection,
-  getPersonne,
+  type Personne,
   type Rarete,
   type UserTypeCarte,
 } from "@/lib/victorinis";
@@ -22,8 +21,19 @@ interface Props {
   refreshKey?: number;
 }
 
-// Or d'abord, puis argent, puis bleu
+// De la plus haute à la plus basse
 const ORDRE_RARETE: Rarete[] = ["or", "argent", "bleu"];
+
+const JOUEURS = PERSONNES.filter((p) => p.role === "joueur");
+const COACHES = PERSONNES.filter((p) => p.role === "coach");
+
+/**
+ * Hauteur d'une carte : on partage la hauteur de l'écran (moins l'en-tête de
+ * l'appli et celle de l'onglet) entre 3 rangées, sans jamais dépasser ce que
+ * permet la largeur (3 cartes côte à côte, ratio 2:3).
+ */
+const CARD_H =
+  "max(90px, min(calc((100dvh - 330px) / 3), calc((min(100vw, 42rem) - 48px) / 2)))";
 
 export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Props) {
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -42,91 +52,106 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
     };
   }, [userId, userType, refreshKey]);
 
-  // Uniquement les cartes possédées, triées par rareté puis par ordre des personnes
-  const cartes = useMemo(() => {
-    const liste: { personne: string; rarete: Rarete; n: number }[] = [];
-    for (const r of ORDRE_RARETE) {
-      for (const p of PERSONNES) {
-        const n = counts[`${p.slug}|${r}`] ?? 0;
-        if (n > 0) liste.push({ personne: p.slug, rarete: r, n });
-      }
-    }
-    return liste;
-  }, [counts]);
+  const distinctes = Object.keys(counts).length;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
-  const total = cartes.reduce((a, c) => a + c.n, 0);
+  /** Meilleure carte possédée par une personne (or > argent > bleu) */
+  const meilleure = (p: Personne): { rarete: Rarete; n: number } | null => {
+    for (const r of ORDRE_RARETE) {
+      const n = counts[`${p.slug}|${r}`] ?? 0;
+      if (n > 0) return { rarete: r, n };
+    }
+    return null;
+  };
+
+  const renderCarte = (p: Personne) => {
+    const best = meilleure(p);
+
+    // Pas de carte : simple aplat gris foncé, rien ne laisse deviner la carte
+    if (!best) {
+      return (
+        <div
+          key={p.slug}
+          aria-label={`${p.prenom} ${p.nom} : pas encore de carte`}
+          style={{
+            height: CARD_H,
+            aspectRatio: "2 / 3",
+            borderRadius: 12,
+            background: "#23272F",
+            border: "1px solid rgba(255,255,255,0.06)",
+          }}
+        />
+      );
+    }
+
+    const color = RARETE_COLOR[best.rarete];
+    return (
+      <button
+        key={p.slug}
+        onClick={() => setApercu({ personne: p.slug, rarete: best.rarete })}
+        className="relative overflow-hidden transition-transform active:scale-95"
+        style={{
+          height: CARD_H,
+          aspectRatio: "2 / 3",
+          borderRadius: 12,
+          border: `1px solid ${color}`,
+          background: "var(--bg-input)",
+          boxShadow: best.rarete === "or" ? "0 0 14px rgba(242,185,15,0.45)" : undefined,
+        }}
+        aria-label={`${p.prenom} ${p.nom}, carte ${RARETE_LABEL[best.rarete]}${
+          best.n > 1 ? `, ${best.n} exemplaires` : ""
+        }`}
+      >
+        <img
+          src={getCarteUrl(p.slug, best.rarete, 300)}
+          alt=""
+          decoding="async"
+          className="w-full h-full object-cover"
+        />
+        {best.n > 1 && (
+          <span
+            className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-[11px] font-bold leading-none"
+            style={{ background: color, color: best.rarete === "bleu" ? "white" : "#111" }}
+          >
+            ×{best.n}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  const Rangee = ({ gens }: { gens: Personne[] }) => (
+    <div className="flex justify-center gap-2">{gens.map(renderCarte)}</div>
+  );
+
+  const Titre = ({ children }: { children: React.ReactNode }) => (
+    <p
+      className="text-[10px] uppercase tracking-[0.25em] text-center"
+      style={{ color: "var(--text-sub)" }}
+    >
+      {children}
+    </p>
+  );
 
   return (
-    <div className="space-y-5">
-      <Card>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-display text-lg" style={{ color: "var(--text-main)" }}>
-              MES VICTORINIS
-            </p>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {loading
-                ? "Chargement…"
-                : `${cartes.length} / ${TOTAL_CARTES} cartes différentes · ${total} au total`}
-            </p>
-          </div>
-          <span className="text-3xl">🃏</span>
-        </div>
-        <div className="h-1.5 rounded-full mt-3 overflow-hidden" style={{ background: "var(--bg-input)" }}>
-          <div
-            className="h-full rounded-full transition-all duration-700"
-            style={{
-              width: `${(cartes.length / TOTAL_CARTES) * 100}%`,
-              background: "linear-gradient(90deg, #3B7BFF, #C9D1DE, #F2B90F)",
-            }}
-          />
-        </div>
-      </Card>
-
-      {!loading && cartes.length === 0 && (
-        <Card>
-          <p className="text-sm text-center" style={{ color: "var(--text-muted)" }}>
-            Tu n&apos;as pas encore de carte. La première arrive très vite ! 🏀
-          </p>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-3 gap-2">
-        {cartes.map(({ personne, rarete, n }) => {
-          const color = RARETE_COLOR[rarete];
-          const p = getPersonne(personne);
-          return (
-            <button
-              key={`${personne}|${rarete}`}
-              onClick={() => setApercu({ personne, rarete })}
-              className="relative rounded-xl overflow-hidden transition-transform active:scale-95"
-              style={{
-                aspectRatio: "2 / 3",
-                border: `1px solid ${color}`,
-                background: "var(--bg-input)",
-                boxShadow: rarete === "or" ? "0 0 14px rgba(242,185,15,0.45)" : undefined,
-              }}
-              aria-label={`${p?.prenom ?? ""} ${p?.nom ?? ""}, carte ${RARETE_LABEL[rarete]}${n > 1 ? `, ${n} exemplaires` : ""}`}
-            >
-              <img
-                src={getCarteUrl(personne, rarete, 300)}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                className="w-full h-full object-cover"
-              />
-              {n > 1 && (
-                <span
-                  className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-[11px] font-bold"
-                  style={{ background: color, color: rarete === "bleu" ? "white" : "#111" }}
-                >
-                  ×{n}
-                </span>
-              )}
-            </button>
-          );
-        })}
+    <div className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between px-1">
+        <p className="font-display text-lg leading-none" style={{ color: "var(--text-main)" }}>
+          MES VICTORINIS
+        </p>
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+          {loading ? "Chargement…" : `${distinctes}/${TOTAL_CARTES} cartes · ${total} au total`}
+        </p>
       </div>
+
+      <Titre>Joueurs</Titre>
+      <div className="flex flex-col gap-2">
+        <Rangee gens={JOUEURS.slice(0, 3)} />
+        <Rangee gens={JOUEURS.slice(3)} />
+      </div>
+
+      <Titre>Coachs</Titre>
+      <Rangee gens={COACHES} />
 
       {apercu && (
         <CarteModal
