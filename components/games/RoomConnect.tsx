@@ -12,7 +12,8 @@ export interface RoomContext {
   players: PlayerInfo[];
   send: (msg: NetMessage) => void;
   broadcast: (msg: NetMessage) => void;
-  onMessage: (cb: (msg: NetMessage, fromPeerId?: string) => void) => void;
+  /** Abonne un écouteur ; la fonction renvoyée le désabonne (à appeler au démontage). */
+  onMessage: (cb: (msg: NetMessage, fromPeerId?: string) => void) => () => void;
 }
 
 type Transport = "local" | "internet";
@@ -68,6 +69,9 @@ export default function RoomConnect({
 
   const registerHandler = useCallback((cb: (msg: NetMessage, from?: string) => void) => {
     messageHandlers.current.push(cb);
+    return () => {
+      messageHandlers.current = messageHandlers.current.filter((h) => h !== cb);
+    };
   }, []);
 
   const startHost = () => {
