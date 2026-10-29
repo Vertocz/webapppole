@@ -12,6 +12,8 @@ import {
 interface Props {
   personne: string;
   rarete: Rarete;
+  /** Raretés possédées (de la plus haute à la plus basse) : permet de swiper vers les cartes inférieures */
+  raretes?: Rarete[];
   /** true = carte tout juste gagnée (animation + message), false = simple aperçu depuis la collection */
   gagnee?: boolean;
   onClose: () => void;
@@ -24,7 +26,16 @@ const PARTICULES = Array.from({ length: 16 }, (_, i) => ({
   size: 10 + ((i * 7) % 12),
 }));
 
-export default function CarteModal({ personne, rarete, gagnee = true, onClose }: Props) {
+export default function CarteModal({ personne, rarete: rareteInitiale, raretes, gagnee = true, onClose }: Props) {
+  const liste = raretes && raretes.length > 0 ? raretes : [rareteInitiale];
+  const [index, setIndex] = useState(Math.max(0, liste.indexOf(rareteInitiale)));
+  const rarete = liste[index] ?? rareteInitiale;
+  const [ratio, setRatio] = useState(2 / 3);
+  const [touchX, setTouchX] = useState<number | null>(null);
+  const aller = (i: number) => {
+    if (i >= 0 && i < liste.length) setIndex(i);
+  };
+
   const [imageChargee, setImageChargee] = useState(false);
   const [delaiPasse, setDelaiPasse] = useState(!gagnee);
   const revele = imageChargee && delaiPasse;
@@ -35,7 +46,10 @@ export default function CarteModal({ personne, rarete, gagnee = true, onClose }:
 
   useEffect(() => {
     const img = new window.Image();
-    img.onload = () => setImageChargee(true);
+    img.onload = () => {
+      if (img.naturalWidth && img.naturalHeight) setRatio(img.naturalWidth / img.naturalHeight);
+      setImageChargee(true);
+    };
     img.onerror = () => setImageChargee(true); // on ne bloque jamais la modale
     img.src = url;
   }, [url]);
@@ -47,10 +61,14 @@ export default function CarteModal({ personne, rarete, gagnee = true, onClose }:
   }, [gagnee]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") setIndex((i) => Math.min(i + 1, liste.length - 1));
+      if (e.key === "ArrowLeft") setIndex((i) => Math.max(i - 1, 0));
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, liste.length]);
 
   const glow =
     rarete === "or"
@@ -85,6 +103,45 @@ export default function CarteModal({ personne, rarete, gagnee = true, onClose }:
       >
         ✕
       </button>
+
+      {/* Navigation entre les raretés possédées */}
+      {liste.length > 1 && (
+        <>
+          {index > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); aller(index - 1); }}
+              aria-label="Carte supérieure"
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full text-xl z-10"
+              style={{ background: "rgba(255,255,255,0.12)", color: "white" }}
+            >‹</button>
+          )}
+          {index < liste.length - 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); aller(index + 1); }}
+              aria-label="Carte inférieure"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full text-xl z-10"
+              style={{ background: "rgba(255,255,255,0.12)", color: "white" }}
+            >›</button>
+          )}
+          <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {liste.map((r, i) => (
+              <button
+                key={r}
+                onClick={() => aller(i)}
+                aria-label={`Carte ${RARETE_LABEL[r]}`}
+                style={{
+                  width: i === index ? 22 : 8,
+                  height: 8,
+                  borderRadius: 4,
+                  background: RARETE_COLOR[r],
+                  opacity: i === index ? 1 : 0.4,
+                  transition: "all .2s",
+                }}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Particules dorées */}
       {rarete === "or" && revele && (
@@ -131,7 +188,20 @@ export default function CarteModal({ personne, rarete, gagnee = true, onClose }:
       {/* Carte qui se retourne */}
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ perspective: 1200, width: "min(72vw, 300px)", aspectRatio: "2 / 3" }}
+        onTouchStart={(e) => setTouchX(e.touches[0].clientX)}
+        onTouchEnd={(e) => {
+          if (touchX === null) return;
+          const dx = e.changedTouches[0].clientX - touchX;
+          setTouchX(null);
+          if (Math.abs(dx) < 40) return;
+          aller(dx < 0 ? index + 1 : index - 1); // swipe gauche → carte inférieure
+        }}
+        style={{
+          perspective: 1200,
+          width: `min(80vw, 340px, calc(62dvh * ${ratio}))`,
+          aspectRatio: `${ratio}`,
+          touchAction: "pan-y",
+        }}
       >
         <div
           style={{
@@ -155,8 +225,7 @@ export default function CarteModal({ personne, rarete, gagnee = true, onClose }:
               animation: revele && rarete !== "bleu" ? "vic-pulse 2.2s ease-in-out infinite" : undefined,
             }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt={`Carte ${p?.prenom ?? ""} ${p?.nom ?? ""}`} className="w-full h-full object-cover" />
+            <img src={url} alt={`Carte ${p?.prenom ?? ""} ${p?.nom ?? ""}`} className="w-full h-full object-contain" />
             {rarete !== "bleu" && revele && (
               <div className="absolute inset-0 pointer-events-none overflow-hidden">
                 <div

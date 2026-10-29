@@ -38,7 +38,7 @@ const CARD_H =
 export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Props) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
-  const [apercu, setApercu] = useState<{ personne: string; rarete: Rarete } | null>(null);
+  const [apercu, setApercu] = useState<{ personne: string; rarete: Rarete; raretes: Rarete[] } | null>(null);
 
   useEffect(() => {
     let annule = false;
@@ -87,7 +87,13 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
     return (
       <button
         key={p.slug}
-        onClick={() => setApercu({ personne: p.slug, rarete: best.rarete })}
+        onClick={() =>
+          setApercu({
+            personne: p.slug,
+            rarete: best.rarete,
+            raretes: ORDRE_RARETE.filter((r) => (counts[`${p.slug}|${r}`] ?? 0) > 0),
+          })
+        }
         className="relative overflow-hidden transition-transform active:scale-95"
         style={{
           height: CARD_H,
@@ -126,7 +132,7 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
     <div className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between px-1">
         <p className="font-display text-lg leading-none" style={{ color: "var(--text-main)" }}>
-          MES VICTORINIS
+          MES CARTES VICTORINIS
         </p>
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>
           {loading ? "Chargement…" : `${distinctes}/${TOTAL_CARTES} cartes`}
@@ -146,6 +152,7 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
         <CarteModal
           personne={apercu.personne}
           rarete={apercu.rarete}
+          raretes={apercu.raretes}
           gagnee={false}
           onClose={() => setApercu(null)}
         />
