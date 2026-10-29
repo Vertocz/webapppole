@@ -3,7 +3,7 @@
 -- À exécuter dans Supabase > SQL Editor (après victorinis.sql)
 -- ============================================================
 
--- 1) Qui peut échanger : les 5 joueurs (joueuses.victorinis) + les 2 coachs
+-- 1) Qui peut échanger : les 5 joueurs (joueuses.victorinis) + tout le staff du pôle masculin (staff.masculin)
 alter table staff add column if not exists victorinis_echange boolean not null default false;
 
 update staff set victorinis_echange = true
@@ -65,7 +65,7 @@ returns table (out_id text, out_type text, out_prenom text, out_nom text)
 language sql security definer set search_path = public as $$
   select id::text, 'joueur'::text, prenom, nom from joueuses where victorinis
   union all
-  select id::text, 'staff'::text, prenom, nom from staff where coalesce(victorinis_echange, false)
+  select id::text, 'staff'::text, prenom, nom from staff where coalesce(masculin, false)
 $$;
 
 create or replace function victorinis_est_participant(p_id text, p_type text)
