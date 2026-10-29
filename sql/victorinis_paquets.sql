@@ -1,5 +1,5 @@
 -- ============================================================
--- VICTORINIS — bouton « Ouvrir » : 3 cartes, une fois par heure
+-- VICTORINIS — bouton « Ouvrir » : 3 cartes, toutes les 10 minutes
 -- À exécuter dans Supabase > SQL Editor (après victorinis_echanges.sql)
 -- ============================================================
 
@@ -37,11 +37,11 @@ begin
     raise exception 'Tu ne peux pas ouvrir de paquet';
   end if;
 
-  -- Une ouverture par heure, vérifiée et enregistrée en une seule opération
+  -- Une ouverture toutes les 10 minutes, vérifiée et enregistrée en une seule opération
   insert into victorinis_ouvertures (user_id, user_type, derniere)
   values (p_user_id, p_user_type, now())
   on conflict (user_id, user_type) do update set derniere = now()
-  where victorinis_ouvertures.derniere <= now() - interval '1 hour'
+  where victorinis_ouvertures.derniere <= now() - interval '10 minutes'
   returning derniere into v_ts;
 
   if v_ts is null then

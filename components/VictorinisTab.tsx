@@ -27,6 +27,9 @@ interface Props {
   refreshKey?: number;
 }
 
+/** Délai entre deux ouvertures de paquet (doit correspondre au SQL : 10 minutes) */
+const DELAI_PAQUET_MS = 10 * 60_000;
+
 // De la plus haute à la plus basse
 const ORDRE_RARETE: Rarete[] = ["or", "argent", "bleu"];
 
@@ -67,9 +70,9 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
     };
   }, [userId, userType, refreshKey, rechargement]);
 
-  // Délai avant la prochaine ouverture de paquet (1 h)
+  // Délai avant la prochaine ouverture de paquet
   useEffect(() => {
-    getDerniereOuverture(userId, userType).then((d) => setProchaine(d ? d.getTime() + 3600_000 : null));
+    getDerniereOuverture(userId, userType).then((d) => setProchaine(d ? d.getTime() + DELAI_PAQUET_MS : null));
   }, [userId, userType]);
 
   useEffect(() => {
@@ -87,12 +90,12 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
     if (res.error || !res.cartes) {
       // Probablement ouvert depuis un autre appareil : on resynchronise le délai
       const d = await getDerniereOuverture(userId, userType);
-      setProchaine(d ? d.getTime() + 3600_000 : null);
+      setProchaine(d ? d.getTime() + DELAI_PAQUET_MS : null);
       setMaintenant(Date.now());
       setErreurPaquet("Ton prochain paquet n'est pas encore disponible.");
       return;
     }
-    setProchaine(Date.now() + 3600_000);
+    setProchaine(Date.now() + DELAI_PAQUET_MS);
     setMaintenant(Date.now());
     setPaquet(res.cartes);
     setRechargement((n) => n + 1);
@@ -197,25 +200,23 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
           <button
             disabled={minutesRestantes > 0 || ouverture}
             onClick={ouvrir}
-            className="flex-1 py-2 rounded-lg text-xs font-medium active:scale-95 transition-transform disabled:opacity-60"
+            aria-label="Ouvrir un paquet de 3 cartes"
+            className="flex-1 py-2 rounded-lg text-lg leading-none font-medium active:scale-95 transition-transform disabled:opacity-60"
             style={
               minutesRestantes > 0
                 ? { background: "var(--bg-input)", color: "var(--text-muted)", border: "1px solid var(--border)" }
                 : { background: "linear-gradient(135deg, #B8860B, #F2B90F)", color: "#111" }
             }
           >
-            {ouverture
-              ? "Ouverture…"
-              : minutesRestantes > 0
-              ? `🎁 Ouvrir · dans ${minutesRestantes} min`
-              : "🎁 Ouvrir un paquet"}
+            {ouverture ? "…" : minutesRestantes > 0 ? `🎁 ${minutesRestantes} min` : "🎁"}
           </button>
           <button
             onClick={() => setEchangeOuvert(true)}
-            className="flex-1 py-2 rounded-lg text-xs font-medium active:scale-95 transition-transform"
+            aria-label="Échanger des cartes"
+            className="flex-1 py-2 rounded-lg text-lg leading-none font-medium active:scale-95 transition-transform"
             style={{ background: "var(--bg-input)", color: "var(--text-main)", border: "1px solid var(--border)" }}
           >
-            🔄 Échanger
+            🔄
           </button>
         </div>
       )}
