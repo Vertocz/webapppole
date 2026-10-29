@@ -42,7 +42,7 @@ const COACHES = PERSONNES.filter((p) => p.role === "coach");
  * permet la largeur (3 cartes côte à côte, ratio 2:3).
  */
 const CARD_H =
-  "max(90px, min(calc((100dvh - 372px) / 3), calc((min(100vw, 42rem) - 48px) / 2)))";
+  "max(90px, min(calc((100dvh - 330px) / 3), calc((min(100vw, 42rem) - 48px) / 2)))";
 
 export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Props) {
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -92,7 +92,11 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
       const d = await getDerniereOuverture(userId, userType);
       setProchaine(d ? d.getTime() + DELAI_PAQUET_MS : null);
       setMaintenant(Date.now());
-      setErreurPaquet("Ton prochain paquet n'est pas encore disponible.");
+      setErreurPaquet(
+        res.error?.includes("pas encore disponible")
+          ? "Ton prochain paquet n'est pas encore disponible."
+          : `Impossible d'ouvrir le paquet : ${res.error ?? "erreur inconnue"}`
+      );
       return;
     }
     setProchaine(Date.now() + DELAI_PAQUET_MS);
@@ -193,33 +197,33 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
             {loading ? "…" : `${distinctes}/${TOTAL_CARTES}`}
           </p>
         </div>
+        {participe && (
+          <div className="flex gap-1.5 shrink-0">
+            <button
+              disabled={minutesRestantes > 0 || ouverture}
+              onClick={ouvrir}
+              aria-label="Ouvrir un paquet de 3 cartes"
+              className="h-9 min-w-9 px-2 rounded-lg text-base leading-none active:scale-95 transition-transform disabled:opacity-60"
+              style={
+                minutesRestantes > 0
+                  ? { background: "var(--bg-input)", color: "var(--text-muted)", border: "1px solid var(--border)" }
+                  : { background: "linear-gradient(135deg, #B8860B, #F2B90F)", color: "#111" }
+              }
+            >
+              {ouverture ? "…" : minutesRestantes > 0 ? <span className="text-[11px]">🎁 {minutesRestantes}′</span> : "🎁"}
+            </button>
+            <button
+              onClick={() => setEchangeOuvert(true)}
+              aria-label="Échanger des cartes"
+              className="h-9 w-9 rounded-lg text-base leading-none active:scale-95 transition-transform"
+              style={{ background: "var(--bg-input)", color: "var(--text-main)", border: "1px solid var(--border)" }}
+            >
+              🔄
+            </button>
+          </div>
+        )}
       </div>
 
-      {participe && (
-        <div className="flex gap-2">
-          <button
-            disabled={minutesRestantes > 0 || ouverture}
-            onClick={ouvrir}
-            aria-label="Ouvrir un paquet de 3 cartes"
-            className="flex-1 py-2 rounded-lg text-lg leading-none font-medium active:scale-95 transition-transform disabled:opacity-60"
-            style={
-              minutesRestantes > 0
-                ? { background: "var(--bg-input)", color: "var(--text-muted)", border: "1px solid var(--border)" }
-                : { background: "linear-gradient(135deg, #B8860B, #F2B90F)", color: "#111" }
-            }
-          >
-            {ouverture ? "…" : minutesRestantes > 0 ? `🎁 ${minutesRestantes} min` : "🎁"}
-          </button>
-          <button
-            onClick={() => setEchangeOuvert(true)}
-            aria-label="Échanger des cartes"
-            className="flex-1 py-2 rounded-lg text-lg leading-none font-medium active:scale-95 transition-transform"
-            style={{ background: "var(--bg-input)", color: "var(--text-main)", border: "1px solid var(--border)" }}
-          >
-            🔄
-          </button>
-        </div>
-      )}
       {erreurPaquet && (
         <p className="text-xs text-center" style={{ color: "var(--text-muted)" }}>
           {erreurPaquet}
