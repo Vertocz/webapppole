@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Layout from "@/components/Layout";
 import ThemeProvider from "@/components/ThemeProvider";
-import Billets from "@/components/Billets";
+import Billets, { prefetchBilletsOffline } from "@/components/Billets";
+import { prefetchQuizOffline } from "@/components/games/Quiz";
 import CarteAvantage from "@/components/CarteAvantage";
 import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
@@ -18,6 +19,8 @@ import CarteModal from "@/components/CarteModal";
 import { tirerCarte, type CarteGagnee } from "@/lib/victorinis";
 import type { Joueuse } from "@/types";
 import { supabase } from "@/lib/supabase";
+import { getSession, updateSessionUser } from "@/lib/session";
+import { consumePendingRewards, SYNC_EVENT } from "@/lib/offline";
 import PwaBanner from "@/components/PwaBanner";
 import NotificationsPrompt from "@/components/NotificationsPrompt";
 import NotificationsInbox from "@/components/NotificationsInbox";
@@ -55,15 +58,30 @@ export default function JoueuseePage() {
   const [cartesRefresh, setCartesRefresh] = useState(0);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("user");
-    const type = sessionStorage.getItem("type_user");
-    if (!stored || type !== "joueuse") {
-      router.push("/");
+    const session = getSession<Joueuse>();
+    if (!session || session.type !== "joueuse") {
+      router.replace("/");
       return;
     }
-    const parsed = JSON.parse(stored) as Joueuse;
+    const parsed = session.user;
     setUser(parsed);
     setTelephone(parsed.numero_tel ?? "");
+
+    // Prépare le hors ligne : billets PDF à venir + questions du quiz
+    prefetchBilletsOffline(parsed.id);
+    if (parsed.acces_jeux) prefetchQuizOffline();
+
+    // Rafraîchit le profil (accès jeux, Victorinis…) maintenant que la session dure
+    supabase
+      .from("joueuses")
+      .select("*")
+      .eq("id", parsed.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        updateSessionUser(data);
+        setUser((u) => (u ? { ...u, ...data } : u));
+      });
 
     supabase
       .from("billets")
@@ -129,14 +147,23 @@ export default function JoueuseePage() {
     });
   }, [user]);
 
+  // Récompenses des enregistrements faits hors ligne, distribuées après l'envoi
+  useEffect(() => {
+    if (!user) return;
+    const distribute = () => {
+      const n = consumePendingRewards(user.id);
+      if (!n) return;
+      handleSave();
+      for (let i = 0; i < n; i++) handleNewEntry();
+    };
+    distribute();
+    window.addEventListener(SYNC_EVENT, distribute);
+    return () => window.removeEventListener(SYNC_EVENT, distribute);
+  }, [user?.id, handleSave, handleNewEntry]);
+
   const handlePhoneUpdated = (newPhone: string) => {
     setTelephone(newPhone);
-    const stored = sessionStorage.getItem("user");
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      parsed.numero_tel = newPhone;
-      sessionStorage.setItem("user", JSON.stringify(parsed));
-    }
+    updateSessionUser({ numero_tel: newPhone });
   };
 
   const Spinner = () => (

@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { getSessionUser } from "./session";
 
 /**
  * Stats « de tout le temps » du lancer franc.
@@ -37,9 +38,8 @@ const RECORD_KEY = "lf-recordman";
 
 export function getIdentity(): LFIdentity {
   try {
-    const raw = sessionStorage.getItem("user");
-    if (raw) {
-      const u = JSON.parse(raw) as { id?: string | number; prenom?: string; nom?: string };
+    const u = getSessionUser<{ id?: string | number; prenom?: string; nom?: string }>();
+    if (u) {
       if (u.id !== undefined && u.prenom) {
         return { id: String(u.id), label: u.prenom.trim() };
       }

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import IosPushBanner from "@/components/push/IosPushBanner";
+import OfflineStatus from "@/components/OfflineStatus";
 
 export const metadata: Metadata = {
   title: "Pôle France Para Basketball Adapté",
@@ -26,8 +27,7 @@ export const viewport: Viewport = {
   themeColor: "#1B3A8C",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Zoom autorisé : indispensable pour l'accessibilité (malvoyance, lecture)
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -45,10 +45,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <IosPushBanner />
+        <OfflineStatus />
         <script dangerouslySetInnerHTML={{ __html: `
           if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
-              navigator.serviceWorker.register('/sw.js')
+              navigator.serviceWorker.register('/sw.js?v=${process.env.NEXT_PUBLIC_APP_VERSION ?? "dev"}')
                 .then(function(reg) { console.log('SW ok:', reg.scope); })
                 .catch(function(err) { console.warn('SW failed:', err); });
             });

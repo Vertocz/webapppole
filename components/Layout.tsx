@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import ProfilModal from "@/components/ProfilModal";
+import { clearSession } from "@/lib/session";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -80,11 +81,9 @@ export default function Layout({
               </p>
             </button>
             <button
-              onClick={() => { sessionStorage.clear(); router.push("/"); }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              onClick={async () => { await clearSession(); router.replace("/"); }}
+              className="hover-text-main px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
               style={{ border: "1px solid var(--border)", color: "var(--text-sub)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-main)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-sub)")}
             >
               Déconnexion
             </button>

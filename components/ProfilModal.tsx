@@ -347,10 +347,8 @@ function MenuItem({ icon, label, sub, statusDot, onClick }: {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-left transition-all active:scale-[0.98]"
-      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(27,58,140,0.1)")}
-      onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+      className="hover-row w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-left transition-all active:scale-[0.98]"
+      style={{ border: "1px solid rgba(255,255,255,0.06)" }}
     >
       <span className="text-xl w-8 text-center">{icon}</span>
       <div className="flex-1 min-w-0">

@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { SuiviRespiration } from "@/types";
 import Card from "../Card";
+import { todayISO, toLocalISODate } from "@/lib/dates";
+import { applyPending, cacheMedia, getCachedMediaUrl, isOnline, useOnSync, writeOrQueue } from "@/lib/offline";
+import { SUPABASE_URL } from "@/lib/supabase";
+import { PendingTag, QueuedBanner } from "../OfflineUI";
+import { IconBtn, fieldInputStyle as inputStyle, fieldLabelStyle as labelStyle } from "../ui";
 
 // ─── Structure des exercices ──────────────────────────────────────────────────
 const CATEGORIES = [
@@ -80,6 +85,7 @@ type CategorieId = typeof CATEGORIES[number]["id"];
 interface RespiExt {
   id: string;
   joueur_id: string;
+  _pending?: boolean;
   date: string;
   commentaire: string;
   contexte: CategorieId;
@@ -89,9 +95,7 @@ interface RespiExt {
   posture?: string;
 }
 
-const STORAGE_AUDIO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/pm/`;
-const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" } as React.CSSProperties;
-const labelStyle = { display: "block", fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--text-sub)", marginBottom: "0.5rem" };
+const STORAGE_AUDIO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL || SUPABASE_URL}/storage/v1/object/public/pm/`;
 
 // ─── Composant chip de sélection ──────────────────────────────────────────────
 function ChipGroup({ options, value, onChange, couleur }: { options: readonly string[]; value: string; onChange: (v: string) => void; couleur: string }) {
@@ -115,30 +119,19 @@ function ChipGroup({ options, value, onChange, couleur }: { options: readonly st
   );
 }
 
-function IconBtn({ onClick, icon, danger = false, title }: { onClick: () => void; icon: string; danger?: boolean; title: string }) {
-  return (
-    <button onClick={onClick} title={title}
-      className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0"
-      style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}
-      onMouseEnter={(e) => (e.currentTarget.style.color = danger ? "#f87171" : "var(--text-main)")}
-      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
-      {icon}
-    </button>
-  );
-}
 
 // ─── Composant principal ──────────────────────────────────────────────────────
 export default function RespirationTab({ userId, readOnly = false, onSave, onCreate }: { userId: string; readOnly?: boolean; onSave?: () => void; onCreate?: () => void }) {
   const [historique, setHistorique] = useState<RespiExt[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<false | "ok" | "queued">(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<RespiExt | null>(null);
 
   const [categorieActive, setCategorieActive] = useState<CategorieId>("activation");
-  const [dateS, setDateS] = useState(new Date().toISOString().split("T")[0]);
+  const [dateS, setDateS] = useState(todayISO());
   const [commentaire, setCommentaire] = useState("");
   const [exerciceChoisi, setExerciceChoisi] = useState<string | null>(
     CATEGORIES.find(c => c.id === "activation")?.exercices[0]?.id ?? null
@@ -154,17 +147,23 @@ export default function RespirationTab({ userId, readOnly = false, onSave, onCre
   const load = async () => {
     const d = new Date(); d.setDate(d.getDate() - 30);
     const { data } = await supabase.from("suivi_respiration").select("*").eq("joueur_id", userId)
-      .gte("date", d.toISOString().split("T")[0]).order("date", { ascending: false });
-    setHistorique((data ?? []) as RespiExt[]);
+      .gte("date", toLocalISODate(d)).order("date", { ascending: false });
+    const rows = (data ?? []) as RespiExt[];
+    setHistorique(
+      readOnly
+        ? rows
+        : (await applyPending(rows, "suivi_respiration", "joueur_id", userId)).sort((a, b) => b.date.localeCompare(a.date))
+    );
     setLoading(false);
   };
 
   useEffect(() => { load(); }, [userId]);
+  useOnSync(["suivi_respiration"], () => { load(); });
 
   const resetForm = () => {
     setEditingItem(null); setCommentaire(""); setExerciceChoisi(null);
     setTempsChoisi(""); setMomentChoisi(""); setPostureChoisie("");
-    setDateS(new Date().toISOString().split("T")[0]);
+    setDateS(todayISO());
   };
 
   const resetCriteres = (catId?: string) => {
@@ -185,11 +184,15 @@ export default function RespirationTab({ userId, readOnly = false, onSave, onCre
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const toggleAudio = (key: string, path: string) => {
+  const toggleAudio = async (key: string, path: string) => {
     if (playingKey === key) { audioRefs.current[key]?.pause(); setPlayingKey(null); return; }
     if (playingKey && audioRefs.current[playingKey]) audioRefs.current[playingKey].pause();
     if (!audioRefs.current[key]) {
-      const audio = new Audio(STORAGE_AUDIO_BASE + path);
+      const remote = STORAGE_AUDIO_BASE + path;
+      // Hors ligne : lecture depuis la copie gardée sur l'appareil
+      const local = isOnline() ? null : await getCachedMediaUrl(remote);
+      if (isOnline()) cacheMedia(remote); // garde une copie pour la prochaine fois
+      const audio = new Audio(local ?? remote);
       audio.ontimeupdate = () => {
         const pct = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
         setAudioProgress((prev) => ({ ...prev, [key]: pct }));
@@ -221,18 +224,15 @@ export default function RespirationTab({ userId, readOnly = false, onSave, onCre
         posture: postureChoisie || null,
       };
 
-      if (editingItem) {
-        const { error } = await supabase.from("suivi_respiration").update(payload).eq("id", editingItem.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("suivi_respiration").insert({ joueur_id: userId, ...payload });
-        if (error) throw error;
-        onCreate?.();
-      }
+      const res = editingItem
+        ? await writeOrQueue("suivi_respiration", "update", { payload, rowId: editingItem.id })
+        : await writeOrQueue("suivi_respiration", "insert", { payload: { joueur_id: userId, ...payload }, reward: userId });
+      if (res.error) throw res.error;
+      if (!editingItem && !res.queued) onCreate?.();
 
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-      onSave?.();
+      setSaved(res.queued ? "queued" : "ok");
+      setTimeout(() => setSaved(false), res.queued ? 5000 : 3000);
+      if (!res.queued) onSave?.();
       resetForm();
       await load();
     } catch (err: unknown) {
@@ -244,7 +244,7 @@ export default function RespirationTab({ userId, readOnly = false, onSave, onCre
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from("suivi_respiration").delete().eq("id", id);
+    await writeOrQueue("suivi_respiration", "delete", { rowId: id });
     setDeleteConfirm(null); if (editingItem?.id === id) resetForm(); await load();
   };
 
@@ -393,10 +393,8 @@ export default function RespirationTab({ userId, readOnly = false, onSave, onCre
               {editingItem ? "MODIFIER LA SÉANCE" : "ENREGISTRER UNE SÉANCE"}
             </h2>
             {editingItem && (
-              <button onClick={resetForm} className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-main)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
+              <button onClick={resetForm} className="hover-text-main px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}>
                 ✕ Annuler
               </button>
             )}
@@ -442,7 +440,8 @@ export default function RespirationTab({ userId, readOnly = false, onSave, onCre
             </div>
 
             {/* Message de succès */}
-            {saved && (
+            {saved === "queued" && <QueuedBanner />}
+            {saved === "ok" && (
               <div className="rounded-lg px-4 py-3 text-sm animate-slide-in" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", color: "#86efac" }}>
                 {editingItem ? "✅ Séance modifiée !" : "✅ Séance enregistrée !"}
               </div>
@@ -485,6 +484,7 @@ export default function RespirationTab({ userId, readOnly = false, onSave, onCre
                             <span className="text-xs font-medium tracking-widest uppercase" style={{ color: "var(--text-sub)" }}>
                               {new Date(h.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
                             </span>
+                            {h._pending && <PendingTag />}
                             {cat && (
                               <span className="text-xs px-2 py-0.5 rounded-full"
                                 style={{ background: `color-mix(in srgb, ${cat.couleur} 12%, transparent)`, color: cat.couleur }}>

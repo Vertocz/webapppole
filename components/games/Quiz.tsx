@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { writeOrQueue } from "@/lib/offline";
 import { getIdentity } from "@/lib/lancerFrancStats";
 
 const QUESTIONS_PER_GAME = 10;
@@ -34,11 +35,19 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-async function loadQuestions(): Promise<Question[] | null> {
-  const { data, error } = await supabase
+const questionsQuery = () =>
+  supabase
     .from("quiz_questions")
     .select("id, question, reponses, bonne, categorie")
     .eq("actif", true);
+
+/** Met les questions en cache à l'ouverture de l'app : le quiz marche ensuite hors ligne (avion…). */
+export async function prefetchQuizOffline() {
+  await Promise.all([questionsQuery(), loadLeaderboard()]);
+}
+
+async function loadQuestions(): Promise<Question[] | null> {
+  const { data, error } = await questionsQuery();
   if (error || !data) return null;
   const picked = shuffle(data as { id: string; question: string; reponses: string[]; bonne: number; categorie: string | null }[]).slice(0, QUESTIONS_PER_GAME);
   return picked.map((q) => {
@@ -147,12 +156,15 @@ export default function Quiz({ onExit }: { onExit: () => void }) {
     }
     setPhase("done");
     const who = getIdentity();
-    await supabase.from("quiz_scores").insert({
-      user_id: who.id,
-      prenom: who.label,
-      score: scoreRef.current,
-      bonnes: goodRef.current,
-      total: questions.length,
+    // Sans réseau, le score est gardé et envoyé plus tard
+    await writeOrQueue("quiz_scores", "insert", {
+      payload: {
+        user_id: who.id,
+        prenom: who.label,
+        score: scoreRef.current,
+        bonnes: goodRef.current,
+        total: questions.length,
+      },
     });
     setBoard(await loadLeaderboard());
   }, [index, questions.length]);

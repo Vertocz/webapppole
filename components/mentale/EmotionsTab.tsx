@@ -5,6 +5,10 @@ import { supabase } from "@/lib/supabase";
 import type { SuiviEmotion } from "@/types";
 import Card from "../Card";
 import SliderField from "../SliderField";
+import { todayISO, toLocalISODate } from "@/lib/dates";
+import { applyPending, useOnSync, writeOrQueue } from "@/lib/offline";
+import { PendingTag, QueuedBanner } from "../OfflineUI";
+import { IconBtn } from "../ui";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 const EMOTIONS = [
@@ -70,7 +74,7 @@ interface EmotionEntry {
 }
 
 // SuiviEmotion étendu avec les champs optionnels stockés dans metadata
-type SuiviEmotionFull = SuiviEmotion & { metadata?: { expression?: string; pensees_type?: string } };
+type SuiviEmotionFull = SuiviEmotion & { metadata?: { expression?: string; pensees_type?: string }; _pending?: boolean };
 
 const labelStyle = {
   display: "block", fontSize: "0.7rem", fontWeight: 600,
@@ -104,17 +108,6 @@ function buildPayload(userId: string, dateS: string, nom: string, entry: Emotion
   };
 }
 
-function IconBtn({ onClick, icon, danger = false, title }: { onClick: () => void; icon: string; danger?: boolean; title: string }) {
-  return (
-    <button onClick={onClick} title={title}
-      className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0"
-      style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}
-      onMouseEnter={(e) => (e.currentTarget.style.color = danger ? "#f87171" : "var(--text-main)")}
-      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
-      {icon}
-    </button>
-  );
-}
 
 // Placeholder affiché quand l'image est absente
 function EmotionPlaceholder({ emoji, couleur }: { emoji: string; couleur: string }) {
@@ -131,7 +124,7 @@ export default function EmotionsTab({ userId, readOnly = false, onCreate }: { us
   const [historique, setHistorique] = useState<SuiviEmotionFull[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<false | "ok" | "queued">(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<SuiviEmotionFull | null>(null);
@@ -142,7 +135,7 @@ export default function EmotionsTab({ userId, readOnly = false, onCreate }: { us
   const [selectedEmotions, setSelectedEmotions] = useState<Set<string>>(new Set());
   const [entries, setEntries] = useState<Record<string, EmotionEntry>>({});
   const [activeEmotion, setActiveEmotion] = useState<string | null>(null);
-  const [dateS, setDateS] = useState(new Date().toISOString().split("T")[0]);
+  const [dateS, setDateS] = useState(todayISO());
 
   // ── Chargement historique ──
   const load = async () => {
@@ -151,13 +144,21 @@ export default function EmotionsTab({ userId, readOnly = false, onCreate }: { us
       .from("suivi_emotions")
       .select("*")
       .eq("joueur_id", userId)
-      .gte("date", d.toISOString().split("T")[0])
+      .gte("date", toLocalISODate(d))
       .order("date", { ascending: false });
-    if (!error) setHistorique((data ?? []) as SuiviEmotionFull[]);
+    if (!error) {
+      const rows = (data ?? []) as SuiviEmotionFull[];
+      setHistorique(
+        readOnly
+          ? rows
+          : (await applyPending(rows, "suivi_emotions", "joueur_id", userId)).sort((a, b) => b.date.localeCompare(a.date))
+      );
+    }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, [userId]);
+  useOnSync(["suivi_emotions"], () => { load(); });
 
   // ── Reset formulaire ──
   const resetForm = () => {
@@ -165,7 +166,7 @@ export default function EmotionsTab({ userId, readOnly = false, onCreate }: { us
     setSelectedEmotions(new Set());
     setEntries({});
     setActiveEmotion(null);
-    setDateS(new Date().toISOString().split("T")[0]);
+    setDateS(todayISO());
     setSaveError(null);
   };
 
@@ -244,27 +245,34 @@ export default function EmotionsTab({ userId, readOnly = false, onCreate }: { us
     setSaving(true);
     setSaveError(null);
 
+    let queued = false;
     try {
       if (editingItem) {
         const nom = editingItem.emotion_nom;
         const payload = buildPayload(userId, dateS, nom, entries[nom]);
-        const { error } = await supabase.from("suivi_emotions").update({
-          date: payload.date,
-          intensite: payload.intensite,
-          declencheur: payload.declencheur,
-          ressources: payload.ressources,
-          metadata: payload.metadata,
-        }).eq("id", editingItem.id);
-        if (error) throw error;
+        const res = await writeOrQueue("suivi_emotions", "update", {
+          rowId: editingItem.id,
+          payload: {
+            date: payload.date,
+            intensite: payload.intensite,
+            declencheur: payload.declencheur,
+            ressources: payload.ressources,
+            metadata: payload.metadata,
+          },
+        });
+        if (res.error) throw res.error;
+        queued = res.queued;
       } else {
         const rows = Array.from(selectedEmotions).map((nom) => buildPayload(userId, dateS, nom, entries[nom]));
-        const { error } = await supabase.from("suivi_emotions").insert(rows);
-        if (error) throw error;
-        onCreate?.(); // une seule carte par validation, même avec plusieurs émotions
+        // une seule carte par validation, même avec plusieurs émotions
+        const res = await writeOrQueue("suivi_emotions", "insert", { payload: rows, reward: userId });
+        if (res.error) throw res.error;
+        queued = res.queued;
+        if (!queued) onCreate?.();
       }
 
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      setSaved(queued ? "queued" : "ok");
+      setTimeout(() => setSaved(false), queued ? 5000 : 3000);
       resetForm();
       await load();
     } catch (err: unknown) {
@@ -277,7 +285,7 @@ export default function EmotionsTab({ userId, readOnly = false, onCreate }: { us
 
   // ── Suppression ──
   const handleDelete = async (id: string) => {
-    await supabase.from("suivi_emotions").delete().eq("id", id);
+    await writeOrQueue("suivi_emotions", "delete", { rowId: id });
     setDeleteConfirm(null);
     if (editingItem?.id === id) resetForm();
     await load();
@@ -544,7 +552,8 @@ export default function EmotionsTab({ userId, readOnly = false, onCreate }: { us
                 ❌ Erreur : {saveError}
               </div>
             )}
-            {saved && (
+            {saved === "queued" && <QueuedBanner />}
+            {saved === "ok" && (
               <div className="rounded-lg px-4 py-3 text-sm animate-slide-in"
                 style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", color: "#86efac" }}>
                 {editingItem ? "✅ Émotion modifiée !" : "✅ Émotions enregistrées !"}
@@ -600,6 +609,7 @@ export default function EmotionsTab({ userId, readOnly = false, onCreate }: { us
                                 <span className="font-medium text-sm" style={{ color: em?.couleur ?? "var(--accent)" }}>
                                   {item.emotion_nom}
                                 </span>
+                                {item._pending && <PendingTag />}
                                 <span className="font-display text-sm px-2 py-0.5 rounded"
                                   style={{ background: `color-mix(in srgb, ${em?.couleur ?? "var(--accent)"} 12%, transparent)`, color: em?.couleur ?? "var(--accent)" }}>
                                   {item.intensite}/5

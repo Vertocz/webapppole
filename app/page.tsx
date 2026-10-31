@@ -1,15 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
+import { getSessionType, setSession } from "@/lib/session";
+import { useOnline } from "@/lib/offline";
 
 export default function HomePage() {
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const online = useOnline();
+
+  // Déjà connecté sur cet appareil : on ouvre directement son espace
+  useEffect(() => {
+    const type = getSessionType();
+    if (type === "joueuse") router.replace("/player");
+    else if (type === "staff") router.replace("/staff");
+  }, [router]);
 
   const normalizePhone = (val: string) => val.replace(/\s/g, "").replace(/^\+33/, "0");
 
@@ -20,18 +30,20 @@ export default function HomePage() {
       setError("Numéro invalide. Entrez un numéro français (06 ou 07, 10 chiffres).");
       return;
     }
+    if (!navigator.onLine) {
+      setError("Pas de connexion internet. La première connexion nécessite le réseau ; ensuite l'app fonctionne hors ligne.");
+      return;
+    }
     setLoading(true);
     try {
       const { data: joueuses } = await supabase.from("joueuses").select("*").eq("numero_tel", numero);
       if (joueuses && joueuses.length > 0) {
-        sessionStorage.setItem("user", JSON.stringify(joueuses[0]));
-        sessionStorage.setItem("type_user", "joueuse");
+        setSession(joueuses[0], "joueuse");
         router.push("/player"); return;
       }
       const { data: staff } = await supabase.from("staff").select("*").eq("numero_tel", numero);
       if (staff && staff.length > 0) {
-        sessionStorage.setItem("user", JSON.stringify(staff[0]));
-        sessionStorage.setItem("type_user", "staff");
+        setSession(staff[0], "staff");
         router.push("/staff"); return;
       }
       setError("Numéro inconnu. Veuillez contacter votre encadrant.");
@@ -108,6 +120,13 @@ export default function HomePage() {
               />
             </div>
 
+            {!online && !error && (
+              <div className="rounded-lg px-4 py-3 text-sm"
+                style={{ background: "rgba(232,160,25,0.1)", border: "1px solid rgba(232,160,25,0.25)", color: "#F2C46D" }}>
+                📡 Vous êtes hors ligne. La première connexion nécessite internet.
+              </div>
+            )}
+
             {error && (
               <div className="rounded-lg px-4 py-3 text-sm animate-slide-in"
                 style={{ background: "rgba(232,25,44,0.1)", border: "1px solid rgba(232,25,44,0.25)", color: "#FF8090" }}>
@@ -118,15 +137,13 @@ export default function HomePage() {
             <button
               onClick={handleAccess}
               disabled={loading || !phone}
-              className="w-full py-3.5 rounded-xl font-display text-lg tracking-widest transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="hover-lift w-full py-3.5 rounded-xl font-display text-lg tracking-widest transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 background: loading ? "#0B1120" : "linear-gradient(135deg, #1B3A8C, #2952CC)",
                 color: loading ? "#3D5080" : "white",
                 boxShadow: loading ? "none" : "0 4px 24px rgba(27,58,140,0.4)",
                 borderTop: "1px solid rgba(255,255,255,0.08)",
               }}
-              onMouseEnter={(e) => { if (!loading) (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-1px)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)"; }}
             >
               {loading ? "Vérification..." : "ACCÉDER"}
             </button>

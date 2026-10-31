@@ -6,47 +6,23 @@ import type { Activite } from "@/types";
 import Card from "./Card";
 import GraphiqueSportif from "./GraphiqueSportif";
 import SliderField from "./SliderField";
+import { todayISO, toLocalISODate } from "@/lib/dates";
+import { applyPending, useOnSync, writeOrQueue } from "@/lib/offline";
+import { PendingTag, QueuedBanner } from "./OfflineUI";
+import { IconBtn, RANGES, RangeSwitch, Spinner, SuccessBanner, fieldInputStyle as inputStyle, fieldLabelStyle as labelStyle } from "./ui";
+
+type ActiviteAffichee = Activite & { _pending?: boolean };
 
 const SPORTS = [
   "⛹️‍♀️ Basket", "🚴‍♂️ Vélo", "🏃‍♂️ Course à pied", "🏓 Tennis de table",
   "🏸 Badminton", "🏊‍♂️ Natation", "🏋️‍♂️ Renforcement musculaire", "⚽ Football", "Autre",
 ];
 
-// ─── Plage de dates chargée depuis Supabase ────────────────────────────────────
-// "jours: null" = pas de filtre de date (tout l'historique)
-const RANGES: { val: string; label: string; jours: number | null }[] = [
-  { val: "30",  label: "30 jours", jours: 30 },
-  { val: "90",  label: "3 mois",   jours: 90 },
-  { val: "365", label: "1 an",     jours: 365 },
-  { val: "all", label: "Tout",     jours: null },
-];
-
-const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" } as React.CSSProperties;
-const labelStyle = { display: "block", fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--text-sub)", marginBottom: "0.5rem" };
-
-function RangeSwitch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="flex items-center gap-1 p-1 rounded-xl overflow-x-auto scrollbar-hide" style={{ background: "rgba(255,255,255,0.04)" }}>
-      {RANGES.map((r) => (
-        <button key={r.val} onClick={() => onChange(r.val)}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 whitespace-nowrap"
-          style={{
-            background: value === r.val ? "var(--primary)" : "transparent",
-            color: value === r.val ? "white" : "var(--text-muted)",
-            boxShadow: value === r.val ? "0 2px 8px rgba(27,58,140,0.4)" : "none",
-          }}>
-          {r.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function SuiviSportif({ userId, readOnly = false, onSave, onCreate }: { userId: string; readOnly?: boolean; onSave?: () => void; onCreate?: () => void }) {
-  const [activites, setActivites] = useState<Activite[]>([]);
+  const [activites, setActivites] = useState<ActiviteAffichee[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<false | "ok" | "queued">(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [plage, setPlage] = useState<string>("30");
@@ -55,7 +31,7 @@ export default function SuiviSportif({ userId, readOnly = false, onSave, onCreat
   const [duree, setDuree] = useState("");
   const [difficulte, setDifficulte] = useState(5);
   const [plaisir, setPlaisir] = useState(5);
-  const [dateActivite, setDateActivite] = useState(new Date().toISOString().split("T")[0]);
+  const [dateActivite, setDateActivite] = useState(todayISO());
   const [commentaire, setCommentaire] = useState("");
 
   const range = RANGES.find((r) => r.val === plage) ?? RANGES[0];
@@ -65,18 +41,23 @@ export default function SuiviSportif({ userId, readOnly = false, onSave, onCreat
     let query = supabase.from("activites").select("*").eq("joueuse_id", userId).order("date", { ascending: false });
     if (range.jours !== null) {
       const d = new Date(); d.setDate(d.getDate() - range.jours);
-      query = query.gte("date", d.toISOString().split("T")[0]);
+      query = query.gte("date", toLocalISODate(d));
     }
     const { data } = await query;
-    setActivites(data ?? []);
+    const rows: ActiviteAffichee[] = readOnly
+      ? (data ?? [])
+      : (await applyPending(data ?? [], "activites", "joueuse_id", userId))
+          .sort((a, b) => b.date.localeCompare(a.date));
+    setActivites(rows);
     setLoading(false);
-  }, [userId, plage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userId, plage, readOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
+  useOnSync(["activites"], load);
 
   const resetForm = () => {
     setEditingId(null); setSport(SPORTS[0]); setDuree(""); setDifficulte(5); setPlaisir(5);
-    setDateActivite(new Date().toISOString().split("T")[0]); setCommentaire("");
+    setDateActivite(todayISO()); setCommentaire("");
   };
 
   const startEdit = (a: Activite) => {
@@ -89,18 +70,18 @@ export default function SuiviSportif({ userId, readOnly = false, onSave, onCreat
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true);
     const payload = { sport, duree, difficulte, plaisir, commentaire, date: dateActivite };
-    if (editingId) {
-      await supabase.from("activites").update(payload).eq("id", editingId);
-    } else {
-      const { error } = await supabase.from("activites").insert({ joueuse_id: userId, ...payload });
-      if (!error) onCreate?.();
-    }
-    setSaved(true); setTimeout(() => setSaved(false), 3000); onSave?.();
+    const res = editingId
+      ? await writeOrQueue("activites", "update", { payload, rowId: editingId })
+      : await writeOrQueue("activites", "insert", { payload: { joueuse_id: userId, ...payload }, reward: userId });
+    if (!editingId && !res.queued && !res.error) onCreate?.();
+    setSaved(res.queued ? "queued" : "ok");
+    setTimeout(() => setSaved(false), res.queued ? 5000 : 3000);
+    if (!res.queued) onSave?.();
     resetForm(); await load(); setSaving(false);
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from("activites").delete().eq("id", id);
+    await writeOrQueue("activites", "delete", { rowId: id });
     setDeleteConfirm(null); if (editingId === id) resetForm(); await load();
   };
 
@@ -113,10 +94,8 @@ export default function SuiviSportif({ userId, readOnly = false, onSave, onCreat
               {editingId ? "MODIFIER LA SÉANCE" : "NOUVELLE SÉANCE"}
             </h2>
             {editingId && (
-              <button onClick={resetForm} className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-main)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
+              <button onClick={resetForm} className="hover-text-main px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}>
                 ✕ Annuler
               </button>
             )}
@@ -152,7 +131,8 @@ export default function SuiviSportif({ userId, readOnly = false, onSave, onCreat
               <textarea value={commentaire} onChange={(e) => setCommentaire(e.target.value)} rows={3}
                 placeholder="Observations, ressenti..." className="w-full px-4 py-3 rounded-xl outline-none resize-none" style={inputStyle} />
             </div>
-            {saved && <SuccessBanner text={editingId ? "✅ Séance modifiée !" : "✅ Activité enregistrée !"} />}
+            {saved === "ok" && <SuccessBanner text={editingId ? "✅ Séance modifiée !" : "✅ Activité enregistrée !"} />}
+            {saved === "queued" && <QueuedBanner />}
             <button type="submit" disabled={saving || !duree}
               className="w-full py-3.5 rounded-xl font-display text-lg tracking-widest transition-all disabled:opacity-40"
               style={{ background: "linear-gradient(135deg, var(--accent), var(--accent2))", color: "white", boxShadow: "0 4px 20px var(--accent-glow)" }}>
@@ -189,6 +169,7 @@ export default function SuiviSportif({ userId, readOnly = false, onSave, onCreat
                           </span>
                           <span className="text-xs" style={{ color: "var(--text-muted)" }}>·</span>
                           <span className="text-sm font-medium" style={{ color: "var(--text-main)" }}>{a.sport}</span>
+                          {a._pending && <PendingTag />}
                         </div>
                         <div className="flex flex-wrap gap-3 text-sm">
                           <span style={{ color: "var(--text-muted)" }}>⏱ {a.duree}</span>
@@ -221,23 +202,5 @@ export default function SuiviSportif({ userId, readOnly = false, onSave, onCreat
         )}
       </div>
     </div>
-  );
-}
-
-function Spinner() {
-  return <div className="flex justify-center py-8"><div className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--spinner)", borderTopColor: "transparent" }} /></div>;
-}
-function SuccessBanner({ text }: { text: string }) {
-  return <div className="rounded-lg px-4 py-3 text-sm animate-slide-in" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", color: "#86efac" }}>{text}</div>;
-}
-function IconBtn({ onClick, icon, danger = false, title }: { onClick: () => void; icon: string; danger?: boolean; title: string }) {
-  return (
-    <button onClick={onClick} title={title}
-      className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0"
-      style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}
-      onMouseEnter={(e) => (e.currentTarget.style.color = danger ? "#f87171" : "var(--text-main)")}
-      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
-      {icon}
-    </button>
   );
 }

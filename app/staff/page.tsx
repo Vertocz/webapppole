@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
+import { clearSession, getSession, updateSessionUser } from "@/lib/session";
 import ThemeProvider from "@/components/ThemeProvider";
 import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
-import Billets from "@/components/Billets";
+import Billets, { prefetchBilletsOffline } from "@/components/Billets";
+import { prefetchQuizOffline } from "@/components/games/Quiz";
 import Tournois from "@/components/Tournois";
 import GaresLogistique from "@/components/GaresLogistique";
 import BadgesTab from "@/components/BadgesTab";
@@ -62,15 +64,18 @@ export default function StaffPage() {
   ];
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("user");
-    const type = sessionStorage.getItem("type_user");
-    if (!stored || type !== "staff") {
-      router.push("/");
+    const session = getSession<Staff>();
+    if (!session || session.type !== "staff") {
+      router.replace("/");
       return;
     }
-    const u = JSON.parse(stored) as Staff;
+    const u = session.user;
     setUser(u);
     setTelephone(u.numero_tel ?? "");
+
+    // Prépare le hors ligne : billets PDF à venir + questions du quiz
+    prefetchBilletsOffline(u.id);
+    prefetchQuizOffline();
 
     // Le staff n'a plus de badges — on passe juste badgesChecked à true
     setBadgesChecked(true);
@@ -125,12 +130,7 @@ export default function StaffPage() {
 
   const handlePhoneUpdated = (newPhone: string) => {
     setTelephone(newPhone);
-    const stored = sessionStorage.getItem("user");
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      parsed.numero_tel = newPhone;
-      sessionStorage.setItem("user", JSON.stringify(parsed));
-    }
+    updateSessionUser({ numero_tel: newPhone });
   };
 
   const handleSelectJoueur = (j: Joueuse) => {
@@ -228,14 +228,12 @@ export default function StaffPage() {
                 </p>
               </button>
               <button
-                onClick={() => {
-                  sessionStorage.clear();
-                  router.push("/");
+                onClick={async () => {
+                  await clearSession();
+                  router.replace("/");
                 }}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                className="hover-text-main px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                 style={{ border: "1px solid var(--border)", color: "var(--text-sub)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-main)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-sub)")}
               >
                 Déconnexion
               </button>

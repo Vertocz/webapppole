@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
+import { getSession } from "@/lib/session";
 import ThemeProvider from "@/components/ThemeProvider";
 import PushNotificationPanel from "@/components/PushNotificationPanel";
 import ManualBadgeAssign from "@/components/ManualBadgeAssign";
@@ -47,10 +48,9 @@ export default function AdminPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("user");
-    const type   = sessionStorage.getItem("type_user");
-    if (!stored || type !== "staff") { router.push("/"); return; }
-    setUser(JSON.parse(stored) as Staff);
+    const session = getSession<Staff>();
+    if (!session || session.type !== "staff") { router.replace("/"); return; }
+    setUser(session.user);
     setLoading(false);
   }, [router]);
 

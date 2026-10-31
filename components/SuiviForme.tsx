@@ -6,6 +6,12 @@ import type { SuiviForme as SuiviFormeType } from "@/types";
 import Card from "./Card";
 import GraphiqueForme from "./GraphiqueForme";
 import SliderField from "./SliderField";
+import { todayISO, toLocalISODate } from "@/lib/dates";
+import { applyPending, useOnSync, writeOrQueue } from "@/lib/offline";
+import { PendingTag, QueuedBanner } from "./OfflineUI";
+import { IconBtn, RANGES, RangeSwitch, fieldInputStyle as inputStyle, fieldLabelStyle as labelStyle } from "./ui";
+
+type FormeAffichee = SuiviFormeType & { _pending?: boolean };
 
 const LABELS = {
   fatigue: { icon: "😴", label: "Fatigue générale",   sub: "😊 Très frais → 🫩 Toujours fatigué" },
@@ -15,46 +21,16 @@ const LABELS = {
   humeur:  { icon: "😊", label: "Humeur générale",    sub: "😡 Irritable → 🥳 Très positif" },
 };
 
-// ─── Plage de dates chargée depuis Supabase ────────────────────────────────────
-// "jours: null" = pas de filtre de date (tout l'historique)
-const RANGES: { val: string; label: string; jours: number | null }[] = [
-  { val: "30",  label: "30 jours", jours: 30 },
-  { val: "90",  label: "3 mois",   jours: 90 },
-  { val: "365", label: "1 an",     jours: 365 },
-  { val: "all", label: "Tout",     jours: null },
-];
-
-const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" } as React.CSSProperties;
-const labelStyle = { display: "block", fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--text-sub)", marginBottom: "0.5rem" };
-
-function RangeSwitch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="flex items-center gap-1 p-1 rounded-xl overflow-x-auto scrollbar-hide" style={{ background: "rgba(255,255,255,0.04)" }}>
-      {RANGES.map((r) => (
-        <button key={r.val} onClick={() => onChange(r.val)}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 whitespace-nowrap"
-          style={{
-            background: value === r.val ? "var(--primary)" : "transparent",
-            color: value === r.val ? "white" : "var(--text-muted)",
-            boxShadow: value === r.val ? "0 2px 8px rgba(27,58,140,0.4)" : "none",
-          }}>
-          {r.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function SuiviForme({ userId, readOnly = false, onSave, onCreate }: { userId: string; readOnly?: boolean; onSave?: () => void; onCreate?: () => void }) {
-  const [data, setData] = useState<SuiviFormeType[]>([]);
+  const [data, setData] = useState<FormeAffichee[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<false | "ok" | "queued">(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [plage, setPlage] = useState<string>("30");
 
-  const [dateS, setDateS] = useState(new Date().toISOString().split("T")[0]);
+  const [dateS, setDateS] = useState(todayISO());
   const [fatigue, setFatigue] = useState(3);
   const [sommeil, setSommeil] = useState(3);
   const [douleur, setDouleur] = useState(3);
@@ -69,16 +45,21 @@ export default function SuiviForme({ userId, readOnly = false, onSave, onCreate 
     let query = supabase.from("suivi_forme").select("*").eq("joueuse_id", userId).order("date", { ascending: false });
     if (range.jours !== null) {
       const d = new Date(); d.setDate(d.getDate() - range.jours);
-      query = query.gte("date", d.toISOString().split("T")[0]);
+      query = query.gte("date", toLocalISODate(d));
     }
     const { data: d2 } = await query;
-    setData(d2 ?? []); setLoading(false);
-  }, [userId, plage]); // eslint-disable-line react-hooks/exhaustive-deps
+    const rows: FormeAffichee[] = readOnly
+      ? (d2 ?? [])
+      : (await applyPending(d2 ?? [], "suivi_forme", "joueuse_id", userId))
+          .sort((a, b) => b.date.localeCompare(a.date));
+    setData(rows); setLoading(false);
+  }, [userId, plage, readOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
+  useOnSync(["suivi_forme"], load);
 
   const resetForm = () => {
-    setEditingId(null); setDateS(new Date().toISOString().split("T")[0]);
+    setEditingId(null); setDateS(todayISO());
     setFatigue(3); setSommeil(3); setDouleur(3); setStress(3); setHumeur(3); setCommentaire("");
   };
 
@@ -92,18 +73,18 @@ export default function SuiviForme({ userId, readOnly = false, onSave, onCreate 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true);
     const payload = { date: dateS, fatigue, sommeil, douleur, stress, humeur, commentaire };
-    if (editingId) {
-      await supabase.from("suivi_forme").update(payload).eq("id", editingId);
-    } else {
-      const { error } = await supabase.from("suivi_forme").insert({ joueuse_id: userId, ...payload });
-      if (!error) onCreate?.();
-    }
-    setSaved(true); setTimeout(() => setSaved(false), 3000); onSave?.();
+    const res = editingId
+      ? await writeOrQueue("suivi_forme", "update", { payload, rowId: editingId })
+      : await writeOrQueue("suivi_forme", "insert", { payload: { joueuse_id: userId, ...payload }, reward: userId });
+    if (!editingId && !res.queued && !res.error) onCreate?.();
+    setSaved(res.queued ? "queued" : "ok");
+    setTimeout(() => setSaved(false), res.queued ? 5000 : 3000);
+    if (!res.queued) onSave?.();
     resetForm(); await load(); setSaving(false);
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from("suivi_forme").delete().eq("id", id);
+    await writeOrQueue("suivi_forme", "delete", { rowId: id });
     setDeleteConfirm(null); if (editingId === id) resetForm(); await load();
   };
 
@@ -116,10 +97,8 @@ export default function SuiviForme({ userId, readOnly = false, onSave, onCreate 
               {editingId ? "MODIFIER LE SUIVI" : "SUIVI DU JOUR"}
             </h2>
             {editingId && (
-              <button onClick={resetForm} className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-main)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
+              <button onClick={resetForm} className="hover-text-main px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}>
                 ✕ Annuler
               </button>
             )}
@@ -146,7 +125,8 @@ export default function SuiviForme({ userId, readOnly = false, onSave, onCreate 
               <textarea value={commentaire} onChange={(e) => setCommentaire(e.target.value)} rows={3}
                 placeholder="Ressenti du jour..." className="w-full px-4 py-3 rounded-xl outline-none resize-none" style={inputStyle} />
             </div>
-            {saved && (
+            {saved === "queued" && <QueuedBanner />}
+            {saved === "ok" && (
               <div className="rounded-lg px-4 py-3 text-sm animate-slide-in" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", color: "#86efac" }}>
                 {editingId ? "✅ Suivi modifié !" : "✅ Suivi enregistré !"}
               </div>
@@ -183,6 +163,7 @@ export default function SuiviForme({ userId, readOnly = false, onSave, onCreate 
                       <div className="flex-1">
                         <p className="text-xs font-medium tracking-widest uppercase mb-3" style={{ color: "var(--text-sub)" }}>
                           {new Date(d.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                          {d._pending && <span className="ml-2 align-middle"><PendingTag /></span>}
                         </p>
                         <div className="grid grid-cols-5 gap-2 mb-2">
                           {Object.entries(LABELS).map(([key, meta]) => (
@@ -221,17 +202,5 @@ export default function SuiviForme({ userId, readOnly = false, onSave, onCreate 
         )}
       </div>
     </div>
-  );
-}
-
-function IconBtn({ onClick, icon, danger = false, title }: { onClick: () => void; icon: string; danger?: boolean; title: string }) {
-  return (
-    <button onClick={onClick} title={title}
-      className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0"
-      style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}
-      onMouseEnter={(e) => (e.currentTarget.style.color = danger ? "#f87171" : "var(--text-main)")}
-      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}>
-      {icon}
-    </button>
   );
 }

@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { supabase } from "./supabase";
 import { lundiDeLaSemaine } from "./badges";
+import { todayISO, toLocalISODate, addDaysISO } from "@/lib/dates";
 
 type UserType = "joueur" | "staff";
 
@@ -10,7 +11,7 @@ type UserType = "joueur" | "staff";
 async function enregistrerConnexion(
   userId: string, userType: UserType, prenom: string, nom: string
 ) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayISO();
   await supabase.from("connexions").upsert(
     { joueur_id: userId, joueur_type: userType, prenom, nom, date: today },
     { onConflict: "joueur_id,joueur_type,date" }
@@ -23,16 +24,14 @@ async function getSerieConnexion(userId: string, userType: UserType): Promise<nu
     .eq("joueur_id", userId).eq("joueur_type", userType)
     .order("date", { ascending: false }).limit(90);
   if (!data?.length) return 0;
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayISO();
   const diff  = Math.floor(
     (new Date(today).getTime() - new Date(data[0].date).getTime()) / 86400000
   );
   if (diff > 1) return 0;
   let serie = 1, current = data[0].date;
   for (let i = 1; i < data.length; i++) {
-    const prev = new Date(current);
-    prev.setDate(prev.getDate() - 1);
-    if (data[i].date === prev.toISOString().split("T")[0]) { serie++; current = data[i].date; }
+    if (data[i].date === addDaysISO(current, -1)) { serie++; current = data[i].date; }
     else break;
   }
   return serie;
@@ -57,15 +56,14 @@ async function getSerieJoursSportif(userId: string): Promise<number> {
     .eq("joueuse_id", userId).order("date", { ascending: false }).limit(60);
   if (!data?.length) return 0;
   const dates = [...new Set(data.map(d => d.date))];
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayISO();
   const diff  = Math.floor(
     (new Date(today).getTime() - new Date(dates[0]).getTime()) / 86400000
   );
   if (diff > 1) return 0;
   let serie = 1, current = dates[0];
   for (let i = 1; i < dates.length; i++) {
-    const prev = new Date(current); prev.setDate(prev.getDate() - 1);
-    if (dates[i] === prev.toISOString().split("T")[0]) { serie++; current = dates[i]; }
+    if (dates[i] === addDaysISO(current, -1)) { serie++; current = dates[i]; }
     else break;
   }
   return serie;
@@ -73,10 +71,9 @@ async function getSerieJoursSportif(userId: string): Promise<number> {
 
 async function hasRenfoSemaine(userId: string): Promise<boolean> {
   const lundi    = lundiDeLaSemaine(new Date());
-  const dimanche = new Date(lundi); dimanche.setDate(dimanche.getDate() + 6);
   const { data } = await supabase.from("activites").select("id")
     .eq("joueuse_id", userId).eq("sport", "🏋️‍♂️ Renforcement musculaire")
-    .gte("date", lundi).lte("date", dimanche.toISOString().split("T")[0]);
+    .gte("date", lundi).lte("date", addDaysISO(lundi, 6));
   return (data ?? []).length >= 3;
 }
 
@@ -96,9 +93,9 @@ async function hasMoisPlein(userId: string): Promise<boolean> {
   const semaines: Set<string>[] = [new Set(), new Set(), new Set(), new Set()];
   const { data } = await supabase.from("activites").select("date")
     .eq("joueuse_id", userId)
-    .gte("date", (() => { const d = new Date(); d.setDate(d.getDate() - 28); return d.toISOString().split("T")[0]; })());
+    .gte("date", (() => { const d = new Date(); d.setDate(d.getDate() - 28); return toLocalISODate(d); })());
   (data ?? []).forEach(({ date }) => {
-    const lundi = lundiDeLaSemaine(new Date(date));
+    const lundi = lundiDeLaSemaine(new Date(date + "T00:00:00"));
     const idx   = Math.floor(
       (new Date().getTime() - new Date(lundi).getTime()) / (7 * 86400000)
     );
@@ -115,8 +112,7 @@ async function getSommeilConsecutif(userId: string): Promise<number> {
   if (!data?.length) return 0;
   let serie = 1, current = data[0].date;
   for (let i = 1; i < data.length; i++) {
-    const prev = new Date(current); prev.setDate(prev.getDate() - 1);
-    if (data[i].date === prev.toISOString().split("T")[0]) { serie++; current = data[i].date; }
+    if (data[i].date === addDaysISO(current, -1)) { serie++; current = data[i].date; }
     else break;
   }
   return serie;
@@ -137,8 +133,7 @@ async function getFatigueConsecutive(userId: string): Promise<number> {
   if (!data?.length) return 0;
   let serie = 1, current = data[0].date;
   for (let i = 1; i < data.length; i++) {
-    const prev = new Date(current); prev.setDate(prev.getDate() - 1);
-    if (data[i].date === prev.toISOString().split("T")[0]) { serie++; current = data[i].date; }
+    if (data[i].date === addDaysISO(current, -1)) { serie++; current = data[i].date; }
     else break;
   }
   return serie;

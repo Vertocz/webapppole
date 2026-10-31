@@ -4,7 +4,9 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
+import { getSessionType } from "@/lib/session";
 import ThemeProvider from "@/components/ThemeProvider";
+import { todayISO } from "@/lib/dates";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Person {
@@ -85,7 +87,7 @@ export default function TrainsPage() {
   const [destPlace,     setDestPlace]     = useState<Place | null>(null);
   const [suggestions,   setSuggestions]   = useState<Place[]>([]);
   const [loadingSugg,   setLoadingSugg]   = useState(false);
-  const [date,          setDate]          = useState(() => new Date().toISOString().split("T")[0]);
+  const [date,          setDate]          = useState(() => todayISO());
   const [arrivalTime,   setArrivalTime]   = useState("10:00");
   const suggRef = useRef<HTMLDivElement>(null);
 
@@ -96,8 +98,7 @@ export default function TrainsPage() {
 
   // ── Auth ───────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const type = sessionStorage.getItem("type_user");
-    if (type !== "staff") { router.push("/"); return; }
+    if (getSessionType() !== "staff") { router.replace("/"); return; }
     setAuthOk(true);
   }, [router]);
 

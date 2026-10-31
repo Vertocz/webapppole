@@ -1,3 +1,4 @@
+import { toLocalISODate } from "@/lib/dates";
 export type BadgeCategorie =
   | "basket" | "renforcement" | "connexion"
   | "forme" | "mental" | "complet";
@@ -210,5 +211,5 @@ export function lundiDeLaSemaine(date: Date): string {
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().split("T")[0];
+  return toLocalISODate(d);
 }

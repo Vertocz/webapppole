@@ -180,3 +180,30 @@ input[type="range"]::-moz-range-thumb {
 .animate-badge-pop {
   animation: badge-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
+
+/* iOS zoome automatiquement sur les champs < 16px : on les fixe à 16px sur
+   mobile, ce qui permet de garder le zoom manuel activé (accessibilité). */
+@media (max-width: 767px) {
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* ─── Survols (remplacent les onMouseEnter/onMouseLeave en JavaScript) ─── */
+.icon-btn {
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.icon-btn:hover { color: var(--text-main); }
+.icon-btn-danger:hover { color: #f87171; }
+
+.hover-text-main { transition: color 0.15s; }
+.hover-text-main:hover { color: var(--text-main) !important; }
+
+.hover-lift { transition: transform 0.2s; }
+.hover-lift:not(:disabled):hover { transform: translateY(-1px); }
+
+.hover-row { background: rgba(255, 255, 255, 0.03); transition: background 0.15s; }
+.hover-row:hover { background: rgba(27, 58, 140, 0.1); }

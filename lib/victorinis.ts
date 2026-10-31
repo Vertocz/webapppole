@@ -90,6 +90,7 @@ export async function tirerCarteConnexion(
 ): Promise<CarteGagnee | null> {
   const key = "victorinis_tirage_connexion";
   if (sessionStorage.getItem(key)) return null;
+  if (typeof navigator !== "undefined" && !navigator.onLine) return null; // retenté à la prochaine ouverture
   sessionStorage.setItem(key, "1");
   return tirerCarte(userId, userType);
 }

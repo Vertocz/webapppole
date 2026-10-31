@@ -9,12 +9,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Joueuse, Activite } from "@/types";
+import { todayISO, toLocalISODate } from "@/lib/dates";
 
 interface PlayerData { joueur: Joueuse; activites: Activite[] }
 
 function dateMinus(days: number) {
   const d = new Date(); d.setDate(d.getDate() - days);
-  return d.toISOString().split("T")[0];
+  return toLocalISODate(d);
 }
 function avg(arr: number[]) {
   if (!arr.length) return 0;
@@ -276,7 +277,7 @@ export default function ExportPDFModal({ joueurs, onClose }: { joueurs: Joueuse[
         pdf.addImage(canvas.toDataURL("image/jpeg",0.93), "JPEG", 0, 0, 210, 297);
         setProgress(50+Math.round(((i+1)/pages.length)*50));
       }
-      pdf.save(`suivi_sportif_${new Date().toISOString().split("T")[0]}.pdf`);
+      pdf.save(`suivi_sportif_${todayISO()}.pdf`);
       setStatus("done");
       setTimeout(onClose, 1200);
     } catch(err) {

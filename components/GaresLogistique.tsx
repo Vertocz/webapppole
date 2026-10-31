@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { todayISO } from "@/lib/dates";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface TrajetRaw {
@@ -73,7 +74,7 @@ export default function GaresLogistique() {
         if (!data) { setLoading(false); return; }
         const unique = [...new Set(data.map((t) => t.date_depart as string))].sort();
         setDates(unique);
-        const today = new Date().toISOString().split("T")[0];
+        const today = todayISO();
         const idx = unique.indexOf(today);
         setDateIdx(idx >= 0 ? idx : 0);
         setLoading(false);
@@ -199,7 +200,7 @@ export default function GaresLogistique() {
           <p className="text-sm font-medium" style={{ color: "var(--text-main)" }}>
             {capitalize(fmtDate(currentDate))}
           </p>
-          {currentDate === new Date().toISOString().split("T")[0] && (
+          {currentDate === todayISO() && (
             <span className="text-[10px] tracking-widest uppercase" style={{ color: "var(--accent)" }}>
               Aujourd'hui
             </span>
