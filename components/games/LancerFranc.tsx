@@ -44,11 +44,11 @@ const VERTICAL_MAX_LINEAR = 3.5;
 
 // ═════════════════════════════════════════════════════════════════════════════
 
-type Outcome = "swish" | "made" | "rimout" | "board" | "short";
+export type Outcome = "swish" | "made" | "rimout" | "board" | "short";
 type SensorStatus = "checking" | "needs-permission" | "granted" | "denied" | "unsupported";
 type GamePhase = "waiting-vertical" | "ready" | "measuring" | "animating" | "waiting-reset";
 
-interface ShotResult {
+export interface ShotResult {
   id: number;
   outcome: Outcome;
   side: 1 | -1;
@@ -78,7 +78,7 @@ function qualityFromValue(value: number, ideal: number, tolerance: number): numb
   return clamp(1 - Math.abs(value - ideal) / tolerance, 0, 1);
 }
 
-function isMade(outcome: Outcome): boolean {
+export function isMade(outcome: Outcome): boolean {
   return outcome === "swish" || outcome === "made";
 }
 
@@ -576,7 +576,7 @@ function drawScene(
 }
 
 // ─── Scène animée ────────────────────────────────────────────────────────────
-function ShotScene({
+export function ShotScene({
   shot,
   onResult,
   onDone,
@@ -739,6 +739,8 @@ export interface DuelOptions {
   /** Change à chaque nouveau duel : remet le ballon en place et exige la verticale. */
   duelKey: number;
   onShot: (made: boolean, duelKey: number) => void;
+  /** Appelé dès que le tir part (pour que les autres le voient en direct). */
+  onShotFired?: (shot: ShotResult, duelKey: number) => void;
   /** Contenu affiché par-dessus le terrain (messages, attente…). */
   overlay?: ReactNode;
   /** Remplace le bandeau de statistiques. */
@@ -823,6 +825,7 @@ function LancerFrancGame({ onExit, duel }: { onExit?: () => void; duel?: DuelOpt
     shotDuelKeyRef.current = duelRef.current?.duelKey ?? 0;
     shotIdRef.current += 1;
     const next = decideShot(shotIdRef.current, peakPush, angleDeg, flick);
+    duelRef.current?.onShotFired?.(next, shotDuelKeyRef.current);
     changePhase("animating");
     setShot(next);
   }, [changePhase]);
@@ -1042,7 +1045,7 @@ function LancerFrancGame({ onExit, duel }: { onExit?: () => void; duel?: DuelOpt
       </section>
 
       {duel ? duel.footer : <footer
-        className="relative grid grid-cols-3 items-start"
+        className="relative grid grid-cols-4 items-start"
         aria-label="Statistiques"
         style={{
           padding: "14px 20px calc(14px + env(safe-area-inset-bottom))",
@@ -1052,6 +1055,7 @@ function LancerFrancGame({ onExit, duel }: { onExit?: () => void; duel?: DuelOpt
       >
         <Stat label="Réussite" value={`${pct}%`} accent={C_ORANGE} />
         <Stat label="Série" value={stats.streak} accent={stats.streak > 0 ? C_GREEN : C_LINE} />
+        <Stat label="Perso" value={stats.best} accent={stats.best > 0 && stats.streak >= stats.best ? C_GREEN : C_LINE} />
         <Stat label="Record" value={record?.best ?? 0} accent={C_LINE} sub={record?.label} subAccent={record?.mine ? C_GREEN : undefined} />
       </footer>}
     </main>

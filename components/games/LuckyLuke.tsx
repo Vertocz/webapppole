@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RoomContext } from "./RoomConnect";
 import type { NetMessage } from "@/lib/p2pRoom";
-import { LancerFrancDuel } from "./LancerFranc";
+import { LancerFrancDuel, ShotScene, isMade, type Outcome, type ShotResult } from "./LancerFranc";
 import {
   createLucky,
   dropPlayer,
@@ -13,6 +13,7 @@ import {
   scored,
   startNextDuel,
   type LuckyMsg,
+  type LuckyShot,
   type LuckyState,
 } from "@/lib/luckyEngine";
 
@@ -29,6 +30,17 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
   const stateRef = useRef<LuckyState | null>(null);
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
+
+  // Derniers tirs vus, par joueur, pour le duel en cours (affichés aux spectateurs).
+  const [shots, setShots] = useState<Record<string, { duel: number; shot: LuckyShot; n: number }>>({});
+  const receiveShot = useCallback((who: string, duel: number, shot: LuckyShot) => {
+    setShots((prev) => {
+      const old = prev[who];
+      if (old && old.duel === duel && old.shot.id === shot.id) return prev; // doublon (relais + envoi direct)
+      const n = old && old.duel === duel ? old.n + 1 : 1;
+      return { ...prev, [who]: { duel, shot, n } };
+    });
+  }, []);
 
   const publish = useCallback((next: LuckyState | null) => {
     stateRef.current = next;
@@ -47,6 +59,8 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
         if (c.role !== "host" && p?.kind === "lucky-state") {
           stateRef.current = p.state;
           setState(p.state);
+        } else if (p?.kind === "lucky-shot" && p.who && p.who !== c.myId) {
+          receiveShot(p.who, p.duel, p.shot);
         }
       } else if (msg.type === "move" && c.role === "host") {
         const p = msg.payload as LuckyMsg | undefined;
@@ -55,6 +69,13 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
           const who = from ?? msg.from;
           const next = scored(cur, who, p.duel);
           if (next !== cur) publish(next);
+        } else if (p?.kind === "lucky-shot" && cur) {
+          // Tir d'un joueur : on vérifie qu'il est bien en duel, puis on le montre à tout le monde.
+          const who = from ?? msg.from;
+          if (who && p.duel === cur.duel && isShooter(cur, who)) {
+            receiveShot(who, p.duel, p.shot);
+            c.broadcast({ type: "state", payload: { kind: "lucky-shot", duel: p.duel, shot: p.shot, who } satisfies LuckyMsg });
+          }
         }
       }
     });
@@ -103,6 +124,17 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
       c.send({ type: "move", payload: { kind: "lucky-made", duel: duelKey } satisfies LuckyMsg, from: c.myId });
     }
   }, [publish]);
+
+  const onShotFired = useCallback((shot: ShotResult, duelKey: number) => {
+    const c = ctxRef.current;
+    const lite: LuckyShot = { id: shot.id, outcome: shot.outcome, side: shot.side };
+    if (c.role === "host") {
+      receiveShot(c.myId, duelKey, lite);
+      c.broadcast({ type: "state", payload: { kind: "lucky-shot", duel: duelKey, shot: lite, who: c.myId } satisfies LuckyMsg });
+    } else {
+      c.send({ type: "move", payload: { kind: "lucky-shot", duel: duelKey, shot: lite } satisfies LuckyMsg, from: c.myId });
+    }
+  }, [receiveShot]);
 
   const names = state?.names ?? {};
   const nameOf = (id: string | null | undefined) => (id ? names[id] ?? "?" : "?");
@@ -163,6 +195,35 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
         )}
       </Panel>
     );
+  } else if (!shooting && pair && (state.phase === "duel" || (state.phase === "between" && state.last))) {
+    let banner: React.ReactNode;
+    if (state.phase === "between" && state.last) {
+      const l = state.last;
+      banner = (
+        <>
+          <span style={{ fontWeight: 800, color: "#F7F9FC" }}>{nameOf(l.scorer)} marque !</span>{" "}
+          <span style={{ color: l.eliminated ? "#FF8A80" : "#AAB9CC" }}>
+            {l.eliminated ? (l.eliminated === me ? "Tu es éliminé." : `${nameOf(l.eliminated)} est éliminé.`) : "Personne n'est éliminé."}
+          </span>
+        </>
+      );
+    } else {
+      banner = (
+        <span style={{ color: alive ? "#5FE3A1" : "#FF8A80", fontWeight: 700 }}>
+          {!alive
+            ? "Tu es éliminé, tu regardes la fin."
+            : waitDuels === 1
+              ? "À toi au prochain duel !"
+              : `À toi dans ${waitDuels} ${plural(waitDuels ?? 0, "duel", "duels")}`}
+        </span>
+      );
+    }
+    overlay = (
+      <Spectate
+        banner={banner}
+        panes={pair.map((id) => ({ id, name: nameOf(id), entry: shots[id]?.duel === state.duel ? shots[id] : undefined }))}
+      />
+    );
   } else if (state.phase === "between" && state.last) {
     const l = state.last;
     overlay = (
@@ -174,24 +235,6 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
               ? "Tu es éliminé."
               : `${nameOf(l.eliminated)} est éliminé.`
             : "Personne n'est éliminé."}
-        </p>
-      </Panel>
-    );
-  } else if (state.phase === "duel" && !shooting) {
-    overlay = (
-      <Panel>
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: "rgba(233,238,247,0.5)" }}>
-          Duel en cours
-        </p>
-        <Title>
-          {pair ? `${nameOf(pair[0])} contre ${nameOf(pair[1])}` : ""}
-        </Title>
-        <p className="mt-3 text-sm font-semibold" style={{ color: alive ? "#5FE3A1" : "#FF8A80" }}>
-          {!alive
-            ? "Tu es éliminé, tu regardes la fin."
-            : waitDuels === 1
-              ? "À toi au prochain duel !"
-              : `À toi dans ${waitDuels} ${plural(waitDuels ?? 0, "duel", "duels")}`}
         </p>
       </Panel>
     );
@@ -256,10 +299,78 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
         enabled: !!state && state.phase === "duel" && shooting,
         duelKey: state?.duel ?? 0,
         onShot,
+        onShotFired,
         overlay,
         footer,
       }}
     />
+  );
+}
+
+/** Écran partagé : on voit en direct les deux joueurs qui sont en duel. */
+function Spectate({
+  banner,
+  panes,
+}: {
+  banner: React.ReactNode;
+  panes: { id: string; name: string; entry?: { duel: number; shot: LuckyShot; n: number } }[];
+}) {
+  return (
+    <div className="absolute inset-0 flex flex-col" style={{ background: "#0F1520" }}>
+      <div
+        className="px-4 pb-2 text-center text-[13px]"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 10px)", background: "#0A0F18", borderBottom: "1px solid rgba(233,238,247,0.08)" }}
+        aria-live="polite"
+      >
+        {banner}
+      </div>
+      {panes.map((p, i) => (
+        <SpectatePane key={p.id} name={p.name} entry={p.entry} divider={i > 0} />
+      ))}
+    </div>
+  );
+}
+
+function SpectatePane({
+  name,
+  entry,
+  divider,
+}: {
+  name: string;
+  entry?: { duel: number; shot: LuckyShot; n: number };
+  divider: boolean;
+}) {
+  const [result, setResult] = useState<{ id: number; outcome: Outcome } | null>(null);
+  const shot: ShotResult | null = entry ? { id: entry.shot.id, outcome: entry.shot.outcome, side: entry.shot.side } : null;
+  const shown = result && shot && result.id === shot.id ? result.outcome : null;
+  const made = shown ? isMade(shown) : false;
+  return (
+    <div
+      className="relative min-h-0 flex-1"
+      style={{ borderTop: divider ? "2px solid rgba(233,238,247,0.14)" : undefined }}
+    >
+      <ShotScene
+        shot={shot}
+        onResult={(outcome) => shot && setResult({ id: shot.id, outcome })}
+        onDone={() => {}}
+      />
+      <div className="pointer-events-none absolute left-3 top-2 flex items-center gap-2">
+        <span className="rounded-full px-2.5 py-1 text-[12px] font-extrabold" style={{ background: "rgba(10,15,24,0.8)", color: "#F7F9FC" }}>
+          {name}
+        </span>
+        <span className="text-[11px] font-semibold" style={{ color: "rgba(233,238,247,0.6)" }}>
+          {entry ? `essai ${entry.n}` : "vise…"}
+        </span>
+      </div>
+      {shown && (
+        <div
+          className="pointer-events-none absolute right-3 top-2 rounded-full px-2.5 py-1 text-[12px] font-black tracking-wide"
+          style={{ background: made ? "rgba(95,227,161,0.18)" : "rgba(255,138,128,0.15)", color: made ? "#5FE3A1" : "#FF8A80" }}
+        >
+          {made ? "PANIER !" : "RATÉ"}
+        </div>
+      )}
+    </div>
   );
 }
 

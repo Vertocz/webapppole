@@ -8,7 +8,7 @@ import QRCode from "qrcode";
  * (pas de flou de redimensionnement), avec la marge blanche réglementaire de 4 modules
  * (une marge trop courte est une cause fréquente d'échec de lecture).
  */
-export default function QRCodeDisplay({ data, size = 360 }: { data: string; size?: number }) {
+export default function QRCodeDisplay({ data, size = 440 }: { data: string; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState(false);
 
@@ -21,7 +21,7 @@ export default function QRCodeDisplay({ data, size = 360 }: { data: string; size
       const margin = 4;
       const total = n + margin * 2;
       const dpr = Math.min(window.devicePixelRatio || 1, 3);
-      const target = Math.min(size, window.innerWidth - 48);
+      const target = Math.min(size, window.innerWidth - 32);
       const scale = Math.max(2, Math.floor((target * dpr) / total));
       canvas.width = total * scale;
       canvas.height = total * scale;

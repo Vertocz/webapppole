@@ -56,6 +56,9 @@ export default function RoomConnect({
   const [joinCode, setJoinCode] = useState("");
   const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
   const [busy, setBusy] = useState(false);
+  // Suivi de la liaison après le scan (côté hôte : l'invité en cours ; côté invité : l'hôte).
+  const [connecting, setConnecting] = useState<{ peerId: string | null; since: number } | null>(null);
+  const [link, setLink] = useState<{ connected: boolean; failed: boolean; text: string } | null>(null);
 
   useEffect(() => {
     const who = getIdentity();
@@ -64,6 +67,42 @@ export default function RoomConnect({
       setName(who.label);
     }
   }, []);
+
+  // Relève l'état de la liaison toutes les 500 ms tant qu'une connexion est en cours.
+  useEffect(() => {
+    if (!connecting) {
+      setLink(null);
+      return;
+    }
+    const read = () => {
+      if (connecting.peerId) setLink(hostRef.current?.linkState(connecting.peerId) ?? null);
+      else setLink(clientRef.current?.linkState() ?? null);
+    };
+    read();
+    const id = window.setInterval(read, 500);
+    return () => window.clearInterval(id);
+  }, [connecting]);
+
+  // Connexion établie : on n'a plus rien à suivre.
+  useEffect(() => {
+    if (connecting && link?.connected) setConnecting(null);
+  }, [connecting, link]);
+
+  const [, setNow] = useState(0);
+  useEffect(() => {
+    if (!connecting) return;
+    const id = window.setInterval(() => setNow((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [connecting]);
+
+  const LINK_TIMEOUT_MS = 20000;
+  const linkFailed = !!connecting && (!!link?.failed || Date.now() - connecting.since > LINK_TIMEOUT_MS);
+
+  const retryHostInvite = async () => {
+    if (connecting?.peerId) hostRef.current?.dropPeer(connecting.peerId);
+    setConnecting(null);
+    await inviteNext();
+  };
 
   const realtimeRef = useRef<RealtimeRoom | null>(null);
   const readyRef = useRef(false);
@@ -154,6 +193,7 @@ export default function RoomConnect({
         messageHandlers.current.forEach((h) => h(msg));
       });
       setInvitePayload(answerPayload);
+      setConnecting({ peerId: null, since: Date.now() });
       setStep("join-waiting");
     } catch {
       setError("QR invalide ou expiré, réessaie.");
@@ -166,6 +206,7 @@ export default function RoomConnect({
     setError("");
     try {
       await hostRef.current.completeInvite(pendingPeerId, data);
+      setConnecting({ peerId: pendingPeerId, since: Date.now() });
       setPendingPeerId(null);
       setInvitePayload(null);
       setStep("host-lobby");
@@ -415,6 +456,39 @@ export default function RoomConnect({
             </div>
           )}
 
+          {connecting?.peerId && (
+            <div
+              className="rounded-xl px-3 py-3 text-sm space-y-2"
+              style={{ background: "var(--bg-input)", border: `1px solid ${linkFailed ? "#f87171" : "var(--border)"}` }}
+            >
+              <p style={{ color: linkFailed ? "#f87171" : "var(--text-main)" }}>
+                {linkFailed
+                  ? "La connexion n'a pas abouti."
+                  : "Connexion du joueur en cours… ne quittez pas cet écran."}
+              </p>
+              {linkFailed && (
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Vérifiez que les deux téléphones sont sur le même réseau (hotspot de l&apos;un des deux), puis recommencez
+                  avec un nouveau QR.
+                </p>
+              )}
+              {link && (
+                <p className="text-[10px]" style={{ color: "var(--text-sub)" }}>
+                  {link.text}
+                </p>
+              )}
+              {linkFailed && (
+                <button
+                  onClick={retryHostInvite}
+                  className="w-full py-2.5 rounded-xl text-sm font-medium"
+                  style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
+                >
+                  Réessayer avec un nouveau QR
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <p className="text-xs uppercase tracking-widest" style={{ color: "var(--text-sub)" }}>
               Joueurs connectés ({players.length})
@@ -472,9 +546,30 @@ export default function RoomConnect({
           <div className="flex justify-center">
             <QRCodeDisplay data={invitePayload} />
           </div>
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            En attente de connexion…
+          <p className="text-xs" style={{ color: linkFailed ? "#f87171" : "var(--text-muted)" }}>
+            {linkFailed
+              ? "La connexion n'a pas abouti. Vérifie que vous êtes sur le même réseau, puis recommence."
+              : "En attente de connexion… (l'hôte doit scanner ce QR)"}
           </p>
+          {link && (
+            <p className="text-[10px]" style={{ color: "var(--text-sub)" }}>
+              {link.text}
+            </p>
+          )}
+          {linkFailed && (
+            <button
+              onClick={() => {
+                setConnecting(null);
+                setInvitePayload(null);
+                clientRef.current = null;
+                setStep("choice");
+              }}
+              className="w-full py-2.5 rounded-xl text-sm font-medium"
+              style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
+            >
+              Recommencer
+            </button>
+          )}
         </div>
       )}
 

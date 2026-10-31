@@ -41,7 +41,15 @@ export interface LuckyState {
 
 export type LuckyMsg =
   | { kind: "lucky-state"; state: LuckyState }
-  | { kind: "lucky-made"; duel: number };
+  | { kind: "lucky-made"; duel: number }
+  /** Un tir en direct : `who` est ajouté par l'hôte quand il le rediffuse aux spectateurs. */
+  | { kind: "lucky-shot"; duel: number; shot: LuckyShot; who?: string };
+
+export interface LuckyShot {
+  id: number;
+  outcome: "swish" | "made" | "rimout" | "board" | "short";
+  side: 1 | -1;
+}
 
 function shuffle<T>(arr: T[]): T[] {
   const a = arr.slice();

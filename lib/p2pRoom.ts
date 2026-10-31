@@ -182,6 +182,33 @@ function waitIceComplete(pc: RTCPeerConnection): Promise<void> {
   });
 }
 
+/**
+ * Chrome et Safari masquent l'adresse locale des candidats ICE derrière un nom « xxxx.local »
+ * (mDNS) tant que la page n'a pas la permission caméra. Entre deux téléphones sur un hotspot,
+ * ce nom ne se résout pas toujours : la liaison échoue en silence. L'hôte crée son invitation
+ * AVANT de scanner quoi que ce soit : on demande donc la caméra d'abord (il en a besoin de
+ * toute façon pour scanner la réponse), ce qui donne de vraies adresses IP, plus courtes aussi.
+ */
+let mediaPrimed = false;
+export async function primeMediaPermission(): Promise<void> {
+  if (mediaPrimed || typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return;
+  mediaPrimed = true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    stream.getTracks().forEach((t) => t.stop());
+  } catch {
+    /* refusée : on continue, ça marchera peut-être quand même */
+  }
+}
+
+/** Résumé lisible pour le diagnostic : états ICE / canal et nature des adresses. */
+export function describeLink(pc: RTCPeerConnection, dc: RTCDataChannel | null): string {
+  const sdp = `${pc.localDescription?.sdp ?? ""}\n${pc.remoteDescription?.sdp ?? ""}`;
+  const cands = sdp.split(/\r?\n/).filter((l) => l.startsWith("a=candidate:"));
+  const mdns = cands.filter((l) => /\.local /.test(l)).length;
+  return `ice ${pc.iceConnectionState} · canal ${dc?.readyState ?? "aucun"} · ${cands.length} adresse(s)${mdns ? `, dont ${mdns} masquée(s)` : ""}`;
+}
+
 type MessageHandler = (msg: NetMessage, fromPeerId: string) => void;
 
 // ─── Hôte : gère plusieurs connexions clients en étoile ───────────────────────
@@ -225,6 +252,7 @@ export class HostRoom {
 
   /** Démarre l'invitation d'un nouveau joueur : renvoie le payload à afficher en QR */
   async createInvite(guestNameHint: string): Promise<{ peerId: string; qrPayload: string }> {
+    await primeMediaPermission();
     const peerId = newId();
     const pc = new RTCPeerConnection(RTC_CONFIG);
     const dc = pc.createDataChannel("game");
@@ -237,6 +265,32 @@ export class HostRoom {
 
     const qrPayload = encodeSignal("offer", peerId, pc.localDescription);
     return { peerId, qrPayload };
+  }
+
+  /** État de la liaison avec un invité (pour affichage). */
+  linkState(peerId: string): { connected: boolean; failed: boolean; text: string } | null {
+    const e = this.peers.get(peerId);
+    if (!e) return null;
+    const st = e.pc.iceConnectionState;
+    return {
+      connected: e.dc.readyState === "open",
+      failed: st === "failed" || st === "closed",
+      text: describeLink(e.pc, e.dc),
+    };
+  }
+
+  /** Abandonne une invitation qui n'a pas abouti. */
+  dropPeer(peerId: string) {
+    const e = this.peers.get(peerId);
+    if (!e) return;
+    this.peers.delete(peerId);
+    try {
+      e.dc.onclose = null;
+      e.dc.close();
+      e.pc.close();
+    } catch {
+      /* déjà fermée */
+    }
   }
 
   /** Termine l'invitation une fois la réponse (QR scanné) du joueur reçue */
@@ -315,6 +369,16 @@ export class ClientRoom {
       } catch {
         /* message non JSON ignoré */
       }
+    };
+  }
+
+  /** État de la liaison avec l'hôte (pour affichage). */
+  linkState(): { connected: boolean; failed: boolean; text: string } {
+    const st = this.pc.iceConnectionState;
+    return {
+      connected: this.dc?.readyState === "open",
+      failed: st === "failed" || st === "closed",
+      text: describeLink(this.pc, this.dc),
     };
   }
 
