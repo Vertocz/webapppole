@@ -75,8 +75,13 @@ export default function RoomConnect({
       return;
     }
     const read = () => {
-      if (connecting.peerId) setLink(hostRef.current?.linkState(connecting.peerId) ?? null);
-      else setLink(clientRef.current?.linkState() ?? null);
+      if (connecting.peerId) {
+        void hostRef.current?.refreshStats(connecting.peerId);
+        setLink(hostRef.current?.linkState(connecting.peerId) ?? null);
+      } else {
+        void clientRef.current?.refreshStats();
+        setLink(clientRef.current?.linkState() ?? null);
+      }
     };
     read();
     const id = window.setInterval(read, 500);
@@ -473,7 +478,7 @@ export default function RoomConnect({
                 </p>
               )}
               {link && (
-                <p className="text-[10px]" style={{ color: "var(--text-sub)" }}>
+                <p className="text-[10px] whitespace-pre-wrap break-all" style={{ color: "var(--text-sub)" }}>
                   {link.text}
                 </p>
               )}
@@ -552,7 +557,7 @@ export default function RoomConnect({
               : "En attente de connexion… (l'hôte doit scanner ce QR)"}
           </p>
           {link && (
-            <p className="text-[10px]" style={{ color: "var(--text-sub)" }}>
+            <p className="text-[10px] whitespace-pre-wrap break-all text-left" style={{ color: "var(--text-sub)" }}>
               {link.text}
             </p>
           )}

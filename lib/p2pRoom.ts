@@ -209,6 +209,36 @@ export function describeLink(pc: RTCPeerConnection, dc: RTCDataChannel | null): 
   return `ice ${pc.iceConnectionState} · canal ${dc?.readyState ?? "aucun"} · ${cands.length} adresse(s)${mdns ? `, dont ${mdns} masquée(s)` : ""}`;
 }
 
+/**
+ * Diagnostic détaillé : adresses de chaque côté et compteurs de tests de connexion.
+ * « reçus = 0 » alors que « envoyés > 0 » : les paquets de l'autre téléphone n'arrivent pas
+ * (réseau isolé, mauvaise interface…). « reçus > 0 » mais pas de connexion : problème de réponse.
+ */
+export async function collectLinkStats(pc: RTCPeerConnection): Promise<string> {
+  try {
+    const report = await pc.getStats();
+    const locals: string[] = [];
+    const remotes: string[] = [];
+    let sent = 0, received = 0, answered = 0, bestState = "aucune paire";
+    report.forEach((r: Record<string, unknown>) => {
+      const addr = String(r.address ?? r.ip ?? "?");
+      if (r.type === "local-candidate") locals.push(addr);
+      else if (r.type === "remote-candidate") remotes.push(addr);
+      else if (r.type === "candidate-pair") {
+        sent += Number(r.requestsSent ?? 0);
+        received += Number(r.requestsReceived ?? 0);
+        answered += Number(r.responsesReceived ?? 0);
+        if (r.state === "succeeded") bestState = "réussie";
+        else if (bestState !== "réussie") bestState = String(r.state ?? bestState);
+      }
+    });
+    const uniq = (a: string[]) => Array.from(new Set(a)).join(" ");
+    return `moi : ${uniq(locals) || "—"}\nlui : ${uniq(remotes) || "—"}\ntests envoyés ${sent} · reçus ${received} · réponses ${answered} · ${bestState}`;
+  } catch {
+    return "";
+  }
+}
+
 type MessageHandler = (msg: NetMessage, fromPeerId: string) => void;
 
 // ─── Hôte : gère plusieurs connexions clients en étoile ───────────────────────
@@ -267,15 +297,24 @@ export class HostRoom {
     return { peerId, qrPayload };
   }
 
+  private statsText = new Map<string, string>();
+
+  /** Met à jour le diagnostic détaillé d'un invité (asynchrone) : à appeler régulièrement. */
+  async refreshStats(peerId: string) {
+    const e = this.peers.get(peerId);
+    if (e) this.statsText.set(peerId, await collectLinkStats(e.pc));
+  }
+
   /** État de la liaison avec un invité (pour affichage). */
   linkState(peerId: string): { connected: boolean; failed: boolean; text: string } | null {
     const e = this.peers.get(peerId);
     if (!e) return null;
     const st = e.pc.iceConnectionState;
+    const detail = this.statsText.get(peerId);
     return {
       connected: e.dc.readyState === "open",
       failed: st === "failed" || st === "closed",
-      text: describeLink(e.pc, e.dc),
+      text: describeLink(e.pc, e.dc) + (detail ? `\n${detail}` : ""),
     };
   }
 
@@ -372,13 +411,19 @@ export class ClientRoom {
     };
   }
 
+  private statsText = "";
+
+  async refreshStats() {
+    this.statsText = await collectLinkStats(this.pc);
+  }
+
   /** État de la liaison avec l'hôte (pour affichage). */
   linkState(): { connected: boolean; failed: boolean; text: string } {
     const st = this.pc.iceConnectionState;
     return {
       connected: this.dc?.readyState === "open",
       failed: st === "failed" || st === "closed",
-      text: describeLink(this.pc, this.dc),
+      text: describeLink(this.pc, this.dc) + (this.statsText ? `\n${this.statsText}` : ""),
     };
   }
 
