@@ -793,7 +793,9 @@ function LancerFrancGame({ onExit, duel }: { onExit?: () => void; duel?: DuelOpt
   const duelEnabled = duel?.enabled ?? true;
   const duelKey = duel?.duelKey ?? 0;
   useEffect(() => {
-    if (!duelRef.current) return;
+    // On ne remet le ballon en place qu'au DÉBUT d'un duel : à la fin, le dernier tir
+    // (souvent le panier gagnant) doit finir son animation.
+    if (!duelRef.current || !duelEnabled) return;
     setShot(null);
     changePhase("waiting-vertical");
   }, [duelEnabled, duelKey, changePhase]);

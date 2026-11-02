@@ -144,6 +144,43 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
   const pair = state ? pairOf(state) : null;
   const waitDuels = state && alive ? duelsUntil(state, me) : null;
 
+  // Pendant l'écran de résultat, pairOf() désigne déjà le duel SUIVANT : on garde en mémoire
+  // les deux joueurs du duel qui vient de se finir, pour continuer à montrer leurs tirs.
+  const pairByDuel = useRef<Record<number, [string, string]>>({});
+  if (state?.phase === "duel" && pair) pairByDuel.current[state.duel] = pair;
+  const finishedPair = state?.phase === "between" ? pairByDuel.current[state.duel] ?? null : null;
+  const inFinishedPair = !!finishedPair && finishedPair.includes(me);
+  const nextUp = state?.phase === "between" && alive && !!pair && pair.includes(me);
+
+  // « À TOI ! » + vibration au début de chacun de mes duels.
+  const [flash, setFlash] = useState(false);
+  const duelNo = state?.duel ?? 0;
+  useEffect(() => {
+    if (!shooting) return;
+    setFlash(true);
+    try {
+      navigator.vibrate?.([120, 60, 120]);
+    } catch {
+      /* non supporté */
+    }
+    const t = window.setTimeout(() => setFlash(false), 1300);
+    return () => window.clearTimeout(t);
+  }, [shooting, duelNo]);
+
+  const resultLine = (l: NonNullable<LuckyState["last"]>) => (
+    <>
+      <span style={{ fontWeight: 800, color: "#F7F9FC" }}>{l.scorer === me ? "Tu marques !" : `${nameOf(l.scorer)} marque !`}</span>{" "}
+      <span style={{ color: l.eliminated ? "#FF8A80" : "#AAB9CC" }}>
+        {l.eliminated ? (l.eliminated === me ? "Tu es éliminé." : `${nameOf(l.eliminated)} est éliminé.`) : "Personne n'est éliminé."}
+      </span>
+      {nextUp && (
+        <span className="block mt-0.5" style={{ color: "#5FE3A1", fontWeight: 700 }}>
+          Tu enchaînes au prochain duel, prépare-toi !
+        </span>
+      )}
+    </>
+  );
+
   // ── Contenu affiché par-dessus le terrain ──
   let overlay: React.ReactNode = null;
   if (!state) {
@@ -195,49 +232,51 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
         )}
       </Panel>
     );
-  } else if (!shooting && pair && (state.phase === "duel" || (state.phase === "between" && state.last))) {
-    let banner: React.ReactNode;
-    if (state.phase === "between" && state.last) {
-      const l = state.last;
-      banner = (
-        <>
-          <span style={{ fontWeight: 800, color: "#F7F9FC" }}>{nameOf(l.scorer)} marque !</span>{" "}
-          <span style={{ color: l.eliminated ? "#FF8A80" : "#AAB9CC" }}>
-            {l.eliminated ? (l.eliminated === me ? "Tu es éliminé." : `${nameOf(l.eliminated)} est éliminé.`) : "Personne n'est éliminé."}
-          </span>
-        </>
-      );
-    } else {
-      banner = (
-        <span style={{ color: alive ? "#5FE3A1" : "#FF8A80", fontWeight: 700 }}>
-          {!alive
-            ? "Tu es éliminé, tu regardes la fin."
-            : waitDuels === 1
-              ? "À toi au prochain duel !"
-              : `À toi dans ${waitDuels} ${plural(waitDuels ?? 0, "duel", "duels")}`}
-        </span>
-      );
-    }
+  } else if (state.phase === "duel" && shooting && pair) {
+    // Mon duel : mon panier en plein écran, l'adversaire résumé en haut, « À TOI ! » au départ.
+    const opp = pair[0] === me ? pair[1] : pair[0];
+    const e = shots[opp]?.duel === state.duel ? shots[opp] : undefined;
+    overlay = (
+      <>
+        <TopBanner>
+          <OpponentLine name={nameOf(opp)} entry={e} />
+        </TopBanner>
+        {flash && <Flash text="À TOI !" />}
+      </>
+    );
+  } else if (state.phase === "duel" && pair) {
     overlay = (
       <Spectate
-        banner={banner}
+        banner={
+          <span style={{ color: alive ? "#5FE3A1" : "#FF8A80", fontWeight: 700 }}>
+            {!alive
+              ? "Tu es éliminé, tu regardes la fin."
+              : waitDuels === 1
+                ? "À toi au prochain duel, prépare-toi !"
+                : `À toi dans ${waitDuels} ${plural(waitDuels ?? 0, "duel", "duels")}`}
+          </span>
+        }
         panes={pair.map((id) => ({ id, name: nameOf(id), entry: shots[id]?.duel === state.duel ? shots[id] : undefined }))}
+        firstId={pair[0]}
+        scorerId={null}
       />
     );
   } else if (state.phase === "between" && state.last) {
     const l = state.last;
-    overlay = (
-      <Panel>
-        <Title>{nameOf(l.scorer)} marque !</Title>
-        <p className="mt-2 text-sm" style={{ color: l.eliminated ? "#FF8A80" : "#AAB9CC" }}>
-          {l.eliminated
-            ? l.eliminated === me
-              ? "Tu es éliminé."
-              : `${nameOf(l.eliminated)} est éliminé.`
-            : "Personne n'est éliminé."}
-        </p>
-      </Panel>
-    );
+    if (inFinishedPair || !finishedPair) {
+      // J'étais en duel : mon dernier tir finit son animation, le résultat s'affiche en bandeau.
+      overlay = <TopBanner tone={l.scorer === me ? "good" : l.eliminated === me ? "bad" : "neutral"}>{resultLine(l)}</TopBanner>;
+    } else {
+      // Spectateur : on reste sur les deux joueurs qui viennent de s'affronter.
+      overlay = (
+        <Spectate
+          banner={resultLine(l)}
+          panes={finishedPair.map((id) => ({ id, name: nameOf(id), entry: shots[id]?.duel === state.duel ? shots[id] : undefined }))}
+          firstId={finishedPair[0]}
+          scorerId={l.scorer}
+        />
+      );
+    }
   }
 
   const footer = (
@@ -311,9 +350,13 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
 function Spectate({
   banner,
   panes,
+  firstId,
+  scorerId,
 }: {
   banner: React.ReactNode;
   panes: { id: string; name: string; entry?: { duel: number; shot: LuckyShot; n: number } }[];
+  firstId: string;
+  scorerId: string | null;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col" style={{ background: "#0F1520" }}>
@@ -325,7 +368,15 @@ function Spectate({
         {banner}
       </div>
       {panes.map((p, i) => (
-        <SpectatePane key={p.id} name={p.name} entry={p.entry} divider={i > 0} />
+        <SpectatePane
+          key={p.id}
+          name={p.name}
+          entry={p.entry}
+          divider={i > 0}
+          role={p.id === firstId ? "1er" : "2e"}
+          scored={scorerId === p.id}
+          dimmed={!!scorerId && scorerId !== p.id}
+        />
       ))}
     </div>
   );
@@ -335,10 +386,16 @@ function SpectatePane({
   name,
   entry,
   divider,
+  role,
+  scored,
+  dimmed,
 }: {
   name: string;
   entry?: { duel: number; shot: LuckyShot; n: number };
   divider: boolean;
+  role: string;
+  scored: boolean;
+  dimmed: boolean;
 }) {
   const [result, setResult] = useState<{ id: number; outcome: Outcome } | null>(null);
   const shot: ShotResult | null = entry ? { id: entry.shot.id, outcome: entry.shot.outcome, side: entry.shot.side } : null;
@@ -347,7 +404,12 @@ function SpectatePane({
   return (
     <div
       className="relative min-h-0 flex-1"
-      style={{ borderTop: divider ? "2px solid rgba(233,238,247,0.14)" : undefined }}
+      style={{
+        borderTop: divider ? "2px solid rgba(233,238,247,0.14)" : undefined,
+        boxShadow: scored ? "inset 0 0 0 3px #5FE3A1" : undefined,
+        opacity: dimmed ? 0.55 : 1,
+        transition: "opacity 300ms",
+      }}
     >
       <ShotScene
         shot={shot}
@@ -359,7 +421,7 @@ function SpectatePane({
           {name}
         </span>
         <span className="text-[11px] font-semibold" style={{ color: "rgba(233,238,247,0.6)" }}>
-          {entry ? `essai ${entry.n}` : "vise…"}
+          {role} · {entry ? `essai ${entry.n}` : "vise…"}
         </span>
       </div>
       {shown && (
@@ -370,6 +432,61 @@ function SpectatePane({
           {made ? "PANIER !" : "RATÉ"}
         </div>
       )}
+    </div>
+  );
+}
+
+function TopBanner({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "good" | "bad" | "neutral" }) {
+  const border = tone === "good" ? "#5FE3A1" : tone === "bad" ? "#FF8A80" : "rgba(233,238,247,0.12)";
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-3 z-[5] rounded-2xl px-4 py-2.5 text-center text-[13px]"
+      style={{
+        top: "calc(env(safe-area-inset-top) + 8px)",
+        marginLeft: 40,
+        background: "rgba(10,15,24,0.82)",
+        border: `1px solid ${border}`,
+        backdropFilter: "blur(6px)",
+      }}
+      aria-live="polite"
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Ligne « adversaire » : son nombre d'essais, et le résultat de son dernier tir une fois le ballon arrivé. */
+function OpponentLine({ name, entry }: { name: string; entry?: { duel: number; shot: LuckyShot; n: number } }) {
+  const [shownId, setShownId] = useState<number | null>(null);
+  const id = entry?.shot.id ?? null;
+  useEffect(() => {
+    if (id === null) return;
+    const t = window.setTimeout(() => setShownId(id), 1100); // pas de résultat avant que le ballon arrive
+    return () => window.clearTimeout(t);
+  }, [id]);
+  const made = entry && shownId === entry.shot.id ? isMade(entry.shot.outcome) : null;
+  return (
+    <span style={{ color: "#AAB9CC" }}>
+      <span style={{ color: "#F7F9FC", fontWeight: 800 }}>{name}</span>
+      {" · "}
+      {entry ? `essai ${entry.n}` : "pas encore tiré"}
+      {made !== null && (
+        <span style={{ color: made ? "#5FE3A1" : "#FF8A80", fontWeight: 800 }}>{made ? " · PANIER" : " · raté"}</span>
+      )}
+    </span>
+  );
+}
+
+function Flash({ text }: { text: string }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center">
+      <div
+        className="text-5xl font-black tracking-tight"
+        style={{ color: "#FF6A2A", textShadow: "0 4px 24px rgba(0,0,0,0.6)", animation: "lucky-flash 1.3s ease-out forwards" }}
+      >
+        {text}
+      </div>
+      <style>{`@keyframes lucky-flash { 0% { opacity: 0; transform: scale(0.6); } 15% { opacity: 1; transform: scale(1.08); } 70% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1); } }`}</style>
     </div>
   );
 }
