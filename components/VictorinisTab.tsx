@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import CarteModal from "@/components/CarteModal";
 import PaquetModal from "@/components/PaquetModal";
+import StockVictorinis from "@/components/StockVictorinis";
 import { EchangeModal, EchangesNotifs } from "@/components/EchangesVictorinis";
 import { getParticipants, type Participant } from "@/lib/victorinisEchanges";
 import {
@@ -50,6 +51,7 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
   const [participants, setParticipants] = useState<Participant[]>([]);
   const participe = participants.some((p) => p.id === userId && p.type === userType);
   const [echangeOuvert, setEchangeOuvert] = useState(false);
+  const [stockOuvert, setStockOuvert] = useState(false);
   const [paquet, setPaquet] = useState<CarteGagnee[] | null>(null);
   const [prochaine, setProchaine] = useState<number | null>(null); // timestamp ms
   const [maintenant, setMaintenant] = useState(() => Date.now());
@@ -224,8 +226,17 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
             {loading ? "…" : `${distinctes}/${TOTAL_CARTES}`}
           </p>
         </div>
+        <div className="flex gap-1.5 shrink-0">
+          <button
+            onClick={() => setStockOuvert(true)}
+            aria-label="Mon stock de cartes en double"
+            className="h-9 w-9 rounded-lg text-base leading-none active:scale-95 transition-transform"
+            style={{ background: "var(--bg-input)", color: "var(--text-main)", border: "1px solid var(--border)" }}
+          >
+            📦
+          </button>
         {participe && (
-          <div className="flex gap-1.5 shrink-0">
+          <>
             <button
               disabled={minutesRestantes > 0 || ouverture}
               onClick={ouvrir}
@@ -247,8 +258,9 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
             >
               🔄
             </button>
-          </div>
+          </>
         )}
+        </div>
       </div>
 
       {erreurPaquet && (
@@ -282,6 +294,8 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
           onChange={() => setRechargement((n) => n + 1)}
         />
       )}
+
+      {stockOuvert && <StockVictorinis counts={counts} onClose={() => setStockOuvert(false)} />}
 
       {paquet && <PaquetModal cartes={paquet} onClose={() => setPaquet(null)} />}
 
