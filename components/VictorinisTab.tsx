@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import CarteModal from "@/components/CarteModal";
 import PaquetModal from "@/components/PaquetModal";
 import { EchangeModal, EchangesNotifs } from "@/components/EchangesVictorinis";
@@ -82,12 +82,34 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
 
   const minutesRestantes = prochaine && prochaine > maintenant ? Math.ceil((prochaine - maintenant) / 60_000) : 0;
 
+  // Son d'ouverture du paquet (fichier dans public/sons)
+  const sonPaquet = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    const a = new Audio("/sons/paquet.mp3");
+    a.preload = "auto";
+    sonPaquet.current = a;
+    return () => {
+      a.pause();
+      sonPaquet.current = null;
+    };
+  }, []);
+
   const ouvrir = async () => {
+    // Sur téléphone, le son doit démarrer pendant le clic : on le lance en muet
+    // tout de suite, puis on le rend audible si le serveur accepte l'ouverture.
+    const son = sonPaquet.current;
+    if (son) {
+      son.muted = true;
+      son.currentTime = 0;
+      son.play().catch(() => {});
+    }
+
     setOuverture(true);
     setErreurPaquet(null);
     const res = await ouvrirPaquet(userId, userType);
     setOuverture(false);
     if (res.error || !res.cartes) {
+      son?.pause();
       // Probablement ouvert depuis un autre appareil : on resynchronise le délai
       const d = await getDerniereOuverture(userId, userType);
       setProchaine(d ? d.getTime() + DELAI_PAQUET_MS : null);
@@ -98,6 +120,11 @@ export default function VictorinisTab({ userId, userType, refreshKey = 0 }: Prop
           : `Impossible d'ouvrir le paquet : ${res.error ?? "erreur inconnue"}`
       );
       return;
+    }
+    if (son) {
+      son.currentTime = 0;
+      son.muted = false;
+      son.play().catch(() => {});
     }
     setProchaine(Date.now() + DELAI_PAQUET_MS);
     setMaintenant(Date.now());
