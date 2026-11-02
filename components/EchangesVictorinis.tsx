@@ -7,6 +7,7 @@ import {
   RARETE_COLOR,
   RARETE_LABEL,
   getCarteUrl,
+  getCollection,
   type Rarete,
   type UserTypeCarte,
 } from "@/lib/victorinis";
@@ -68,7 +69,16 @@ function MiniCarte({ ligne }: { ligne: Ligne }) {
   );
 }
 
-function CartesLigne({ lignes, vide }: { lignes: Ligne[]; vide: string }) {
+function CartesLigne({
+  lignes,
+  vide,
+  info,
+}: {
+  lignes: Ligne[];
+  vide: string;
+  /** Petit texte sous chaque carte (ex. combien on en possède). */
+  info?: (l: Ligne) => React.ReactNode;
+}) {
   if (lignes.length === 0) {
     return (
       <p className="text-sm italic py-3" style={{ color: "var(--text-muted)" }}>
@@ -78,9 +88,16 @@ function CartesLigne({ lignes, vide }: { lignes: Ligne[]; vide: string }) {
   }
   return (
     <div className="flex flex-wrap gap-3 justify-center py-2">
-      {lignes.map((l) => (
-        <MiniCarte key={cleCarte(l.personne, l.rarete)} ligne={l} />
-      ))}
+      {lignes.map((l) =>
+        info ? (
+          <div key={cleCarte(l.personne, l.rarete)} className="flex flex-col items-center gap-1" style={{ width: 84 }}>
+            <MiniCarte ligne={l} />
+            <div className="text-center text-[11px] leading-tight">{info(l)}</div>
+          </div>
+        ) : (
+          <MiniCarte key={cleCarte(l.personne, l.rarete)} ligne={l} />
+        ),
+      )}
     </div>
   );
 }
@@ -671,17 +688,21 @@ export function EchangesNotifs({
   const [file, setFile] = useState<Element[]>([]);
   const [travail, setTravail] = useState(false);
   const [retour, setRetour] = useState<string | null>(null);
+  // Ma collection : pour dire, sur une proposition reçue, si je donne une carte que je n'aurai plus.
+  const [mesCartes, setMesCartes] = useState<Record<string, number> | null>(null);
 
   useEffect(() => {
     let annule = false;
     (async () => {
-      const [parts, recues, envoyees] = await Promise.all([
+      const [parts, recues, envoyees, cartes] = await Promise.all([
         getParticipants(),
         getRecues(moi.id, moi.type),
         getEnvoyees(moi.id, moi.type),
+        getCollection(moi.id, moi.type),
       ]);
       if (annule) return;
       setParticipants(parts);
+      setMesCartes(cartes);
       setFile([
         ...recues.map((echange) => ({ sorte: "recue" as const, echange })),
         ...envoyees
@@ -739,6 +760,36 @@ export function EchangesNotifs({
 
   if (courant.sorte === "recue") {
     const prenom = prenomDe(participants, e.de_id, e.de_type);
+    const possede = (l: Ligne) => mesCartes?.[cleCarte(l.personne, l.rarete)] ?? 0;
+    const perdues = mesCartes ? e.demande.filter((l) => possede(l) - l.quantite <= 0) : [];
+    const infoDonne = (l: Ligne) => {
+      if (!mesCartes) return null;
+      const avant = possede(l);
+      const apres = avant - l.quantite;
+      if (apres <= 0) {
+        return (
+          <span style={{ color: "#f87171", fontWeight: 700 }}>
+            {avant <= 1 ? "Ta seule !" : `Tes ${avant} !`}
+            <span className="block font-normal">tu ne l&apos;auras plus</span>
+          </span>
+        );
+      }
+      return (
+        <span style={{ color: "var(--text-muted)" }}>
+          Tu en as {avant}
+          <span className="block">il t&apos;en restera {apres}</span>
+        </span>
+      );
+    };
+    const infoRecoit = (l: Ligne) => {
+      if (!mesCartes) return null;
+      const avant = possede(l);
+      return avant === 0 ? (
+        <span style={{ color: "#4ade80", fontWeight: 700 }}>Nouvelle !</span>
+      ) : (
+        <span style={{ color: "var(--text-muted)" }}>Tu en as déjà {avant}</span>
+      );
+    };
     return cadre(
       <>
         <p className="font-display text-xl text-center mb-1" style={{ color: "var(--text-main)" }}>
@@ -753,12 +804,19 @@ export function EchangesNotifs({
         <p className="text-[11px] uppercase tracking-widest mt-3" style={{ color: "var(--text-sub)" }}>
           Tu reçois
         </p>
-        <CartesLigne lignes={e.offre} vide={`${prenom} ne te donne rien en échange.`} />
+        <CartesLigne lignes={e.offre} vide={`${prenom} ne te donne rien en échange.`} info={infoRecoit} />
 
         <p className="text-[11px] uppercase tracking-widest mt-2" style={{ color: "var(--text-sub)" }}>
           Tu donnes
         </p>
-        <CartesLigne lignes={e.demande} vide="" />
+        <CartesLigne lignes={e.demande} vide="" info={infoDonne} />
+
+        {perdues.length > 0 && (
+          <p className="text-xs mt-2 px-3 py-2 rounded-xl" style={{ background: "rgba(248,113,113,0.12)", color: "#fca5a5" }}>
+            ⚠️ Tu n&apos;auras plus {perdues.length > 1 ? "ces cartes" : "cette carte"} :{" "}
+            {perdues.map((l) => libelleCarte(l.personne, l.rarete)).join(", ")}.
+          </p>
+        )}
 
         {retour && (
           <p className="text-sm mt-3 px-3 py-2 rounded-xl" style={{ background: "#5c1a1a", color: "white" }}>

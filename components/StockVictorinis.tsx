@@ -2,9 +2,13 @@
 
 import { PERSONNES, RARETE_COLOR, RARETE_LABEL, getCarteUrl, type Rarete } from "@/lib/victorinis";
 
-const ORDRE: Rarete[] = ["or", "argent", "bleu"];
+// Ordre d'affichage demandé : bleue, argent, or
+const ORDRE: Rarete[] = ["bleu", "argent", "or"];
 
-/** Stock : les cartes possédées en plus d'un exemplaire (celles qu'on peut échanger). */
+/**
+ * Mon stock : pour chaque personne, ses 3 cartes (bleue, argent, or) en petit format avec
+ * le nombre d'exemplaires. Les cartes en plusieurs exemplaires (échangeables) ressortent.
+ */
 export default function StockVictorinis({
   counts,
   onClose,
@@ -12,10 +16,9 @@ export default function StockVictorinis({
   counts: Record<string, number>;
   onClose: () => void;
 }) {
-  const stock = ORDRE.flatMap((r) =>
-    PERSONNES.map((p) => ({ p, r, n: counts[`${p.slug}|${r}`] ?? 0 })).filter((x) => x.n > 1),
-  );
-  const enTrop = stock.reduce((a, x) => a + x.n - 1, 0);
+  const n = (slug: string, r: Rarete) => counts[`${slug}|${r}`] ?? 0;
+  const enDouble = Object.values(counts).filter((v) => v > 1).length;
+  const enTrop = Object.values(counts).reduce((a, v) => a + Math.max(0, v - 1), 0);
 
   return (
     <div
@@ -24,22 +27,22 @@ export default function StockVictorinis({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Mon stock de cartes en double"
+      aria-label="Mon stock de cartes"
     >
       <div
-        className="w-full max-w-md rounded-2xl p-4 space-y-4 max-h-[90dvh] overflow-y-auto"
+        className="w-full max-w-md rounded-2xl p-4 max-h-[92dvh] overflow-y-auto"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 mb-3">
           <div>
             <p className="font-display text-lg leading-none" style={{ color: "var(--text-main)" }}>
               MON STOCK
             </p>
             <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-              {stock.length === 0
-                ? "Cartes possédées en plusieurs exemplaires"
-                : `${stock.length} carte${stock.length > 1 ? "s" : ""} en double · ${enTrop} exemplaire${enTrop > 1 ? "s" : ""} en trop`}
+              {enDouble === 0
+                ? "Aucune carte en double pour l'instant"
+                : `${enDouble} carte${enDouble > 1 ? "s" : ""} en double · ${enTrop} exemplaire${enTrop > 1 ? "s" : ""} échangeable${enTrop > 1 ? "s" : ""}`}
             </p>
           </div>
           <button
@@ -52,43 +55,63 @@ export default function StockVictorinis({
           </button>
         </div>
 
-        {stock.length === 0 ? (
-          <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-            Aucune carte en double pour l&apos;instant.
-          </p>
-        ) : (
-          <div className="grid grid-cols-3 gap-3">
-            {stock.map(({ p, r, n }) => (
-              <div key={`${p.slug}|${r}`} className="flex flex-col items-center gap-1.5">
-                <div
-                  className="relative w-full overflow-hidden"
-                  style={{
-                    aspectRatio: "2 / 3",
-                    borderRadius: 10,
-                    border: `1px solid ${RARETE_COLOR[r]}`,
-                    background: "var(--bg-input)",
-                    boxShadow: r === "or" ? "0 0 12px rgba(242,185,15,0.4)" : undefined,
-                  }}
-                >
-                  <img src={getCarteUrl(p.slug, r, 200)} alt="" decoding="async" className="h-full w-full object-cover" />
-                  <span
-                    className="absolute right-1 top-1 rounded-md px-1.5 py-0.5 text-xs font-black"
-                    style={{ background: "rgba(0,0,0,0.75)", color: RARETE_COLOR[r] }}
-                  >
-                    ×{n}
+        <div className="flex flex-col">
+          {PERSONNES.map((p, i) => (
+            <div
+              key={p.slug}
+              className="flex items-center gap-2 py-1.5"
+              style={{ borderTop: i === 0 ? undefined : "1px solid var(--border)" }}
+            >
+              <p className="w-[68px] shrink-0 text-sm leading-tight" style={{ color: "var(--text-main)" }}>
+                {p.prenom}
+                {p.role === "coach" && (
+                  <span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    coach
                   </span>
-                </div>
-                <p className="text-center text-xs leading-tight" style={{ color: "var(--text-main)" }}>
-                  {p.prenom}
-                  <span className="block text-[10px]" style={{ color: RARETE_COLOR[r] }}>
-                    {RARETE_LABEL[r]}
-                  </span>
-                </p>
+                )}
+              </p>
+              <div className="flex flex-1 justify-end gap-2.5">
+                {ORDRE.map((r) => (
+                  <PetiteCarte key={r} slug={p.slug} rarete={r} n={n(p.slug, r)} label={`${p.prenom}, ${RARETE_LABEL[r]}`} />
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
       </div>
+    </div>
+  );
+}
+
+function PetiteCarte({ slug, rarete, n, label }: { slug: string; rarete: Rarete; n: number; label: string }) {
+  const color = RARETE_COLOR[rarete];
+  const double = n > 1;
+  return (
+    <div
+      className="relative shrink-0 overflow-hidden"
+      aria-label={`${label} : ${n} exemplaire${n > 1 ? "s" : ""}`}
+      style={{
+        // Petit format : les 7 personnes tiennent sur un écran (on fait défiler seulement sur les très petits).
+        width: "max(40px, min(17vw, 60px, calc((92dvh - 150px) / 10.5 - 8px)))",
+        aspectRatio: "2 / 3",
+        borderRadius: 7,
+        border: n > 0 ? `1px solid ${color}` : "1px solid rgba(255,255,255,0.06)",
+        background: n > 0 ? "var(--bg-input)" : "#23272F",
+        boxShadow: double ? `0 0 10px ${color}66` : undefined,
+      }}
+    >
+      {/* Carte non possédée : simple aplat, rien ne laisse deviner la carte */}
+      {n > 0 && <img src={getCarteUrl(slug, rarete, 200)} alt="" decoding="async" className="h-full w-full object-cover" />}
+      <span
+        className="absolute right-0.5 top-0.5 rounded-md px-1 py-px text-[11px] font-black leading-tight"
+        style={
+          double
+            ? { background: color, color: rarete === "bleu" ? "white" : "#111" }
+            : { background: "rgba(0,0,0,0.65)", color: n > 0 ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.35)" }
+        }
+      >
+        ×{n}
+      </span>
     </div>
   );
 }
