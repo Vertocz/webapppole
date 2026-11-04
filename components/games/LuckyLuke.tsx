@@ -127,7 +127,7 @@ export default function LuckyLuke({ ctx, onExit }: { ctx: RoomContext; onExit: (
 
   const onShotFired = useCallback((shot: ShotResult, duelKey: number) => {
     const c = ctxRef.current;
-    const lite: LuckyShot = { id: shot.id, outcome: shot.outcome, side: shot.side };
+    const lite: LuckyShot = { id: shot.id, outcome: shot.outcome, side: shot.side, offset: shot.offset };
     if (c.role === "host") {
       receiveShot(c.myId, duelKey, lite);
       c.broadcast({ type: "state", payload: { kind: "lucky-shot", duel: duelKey, shot: lite, who: c.myId } satisfies LuckyMsg });
@@ -398,7 +398,7 @@ function SpectatePane({
   dimmed: boolean;
 }) {
   const [result, setResult] = useState<{ id: number; outcome: Outcome } | null>(null);
-  const shot: ShotResult | null = entry ? { id: entry.shot.id, outcome: entry.shot.outcome, side: entry.shot.side } : null;
+  const shot: ShotResult | null = entry ? { id: entry.shot.id, outcome: entry.shot.outcome, side: entry.shot.side, offset: entry.shot.offset ?? 0.5 } : null;
   const shown = result && shot && result.id === shot.id ? result.outcome : null;
   const made = shown ? isMade(shown) : false;
   return (
