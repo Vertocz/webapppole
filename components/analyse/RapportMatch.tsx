@@ -72,7 +72,13 @@ export default function RapportMatch({
     const j = joueurs.find((x) => x.id === id);
     return j ? `${j.prenom} ${j.nom}` : "Joueur";
   };
-  const stats = useMemo(() => (actions ? calculerStats(actions, match.effectif) : null), [actions, match.effectif]);
+  // Joueurs du match, plus ceux retirés de l'effectif après avoir été tagués
+  const idsJoueurs = useMemo(() => {
+    const ids = [...match.effectif];
+    for (const a of actions ?? []) if (a.joueuse_id && !ids.includes(a.joueuse_id)) ids.push(a.joueuse_id);
+    return ids;
+  }, [actions, match.effectif]);
+  const stats = useMemo(() => (actions ? calculerStats(actions, idsJoueurs) : null), [actions, idsJoueurs]);
   const sc = actions ? score(actions) : { nous: 0, adversaire: 0 };
   const avecAdv = match.mode_adversaire !== "aucun";
   const avecTirsAdvPos = match.mode_adversaire === "position";
@@ -191,7 +197,7 @@ export default function RapportMatch({
               </tr>
             </thead>
             <tbody>
-              {match.effectif.map((id) => (
+              {idsJoueurs.map((id) => (
                 <tr key={id} style={{ borderTop: "1px solid var(--border)" }}>
                   <td className="py-2 px-1 font-medium" style={{ color: "var(--text-main)" }}>{nom(id)}</td>
                   {valeursJoueur(stats.joueurs[id]).map((v, i) => (
@@ -210,7 +216,7 @@ export default function RapportMatch({
         <div className="flex flex-wrap gap-1.5 mb-3">
           {[
             { id: "equipe", label: "Équipe" },
-            ...match.effectif.map((id) => ({ id, label: joueurs.find((j) => j.id === id)?.prenom ?? "Joueur" })),
+            ...idsJoueurs.map((id) => ({ id, label: joueurs.find((j) => j.id === id)?.prenom ?? "Joueur" })),
             ...(avecTirsAdvPos ? [{ id: "adversaire", label: match.adversaire || "Adversaire" }] : []),
           ].map((f) => (
             <button
@@ -235,16 +241,17 @@ export default function RapportMatch({
 
       {/* Page imprimée pour le PDF (hors écran) */}
       <div ref={printRef} style={{ position: "fixed", left: "-9999px", top: 0, pointerEvents: "none", zIndex: -1 }} aria-hidden="true">
-        <PagePDF match={match} actions={actions} lignes={lignesEquipe(stats.equipe, stats.adversaire, avecAdv, avecAdv)} stats={stats} nom={nom} sc={sc} avecAdv={avecAdv} />
+        <PagePDF match={match} ids={idsJoueurs} actions={actions} lignes={lignesEquipe(stats.equipe, stats.adversaire, avecAdv, avecAdv)} stats={stats} nom={nom} sc={sc} avecAdv={avecAdv} />
       </div>
     </div>
   );
 }
 
 function PagePDF({
-  match, actions, lignes, stats, nom, sc, avecAdv,
+  match, ids, actions, lignes, stats, nom, sc, avecAdv,
 }: {
   match: Match;
+  ids: string[];
   actions: Action[];
   lignes: ReturnType<typeof lignesEquipe>;
   stats: ReturnType<typeof calculerStats>;
@@ -312,7 +319,7 @@ function PagePDF({
             </tr>
           </thead>
           <tbody>
-            {match.effectif.map((id) => (
+            {ids.map((id) => (
               <tr key={id}>
                 <td style={{ ...td, fontWeight: 600 }}>{nom(id)}</td>
                 {valeursJoueur(stats.joueurs[id]).map((v, i) => <td key={i} style={{ ...td, textAlign: "right", color: i === 0 ? "#9A7818" : "#111827", fontWeight: i === 0 ? 700 : 400 }}>{v}</td>)}
@@ -324,7 +331,7 @@ function PagePDF({
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        {match.effectif.map((id) => (
+        {ids.slice(0, 4).map((id) => (
           <div key={id} style={{ width: 160 }}>
             <p style={{ ...lab, marginBottom: 4 }}>{nom(id).split(" ")[0]}</p>
             <CarteTirs tirs={tirsNous.filter((a) => a.joueuse_id === id)} couleurs={COULEURS_PDF} />

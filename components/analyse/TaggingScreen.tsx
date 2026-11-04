@@ -152,7 +152,8 @@ export default function TaggingScreen({
 
   // ─── Enregistrement ──────────────────────────────────────────────────────
 
-  const appliquerOp = useCallback(async (op: Op, memoriser = true) => {
+  /** Applique une modification à l'écran (sans toucher à la base). */
+  const appliquerLocal = useCallback((op: Op) => {
     setActions((prev) => {
       const sup = new Set(op.supprimes.map((a) => a.id));
       let next = prev.filter((a) => !sup.has(a.id));
@@ -162,25 +163,38 @@ export default function TaggingScreen({
       });
       return tri([...next, ...op.crees]);
     });
-    if (memoriser) undoRef.current.push(op);
-    try {
-      if (op.supprimes.length) {
-        const { error } = await supabase.from("analyse_actions").delete().in("id", op.supprimes.map((a) => a.id));
-        if (error) throw error;
-      }
-      if (op.crees.length) {
-        const { error } = await supabase.from("analyse_actions").insert(op.crees);
-        if (error) throw error;
-      }
-      for (const m of op.modifs) {
-        const { error } = await supabase.from("analyse_actions").update(m.apres).eq("id", m.id);
-        if (error) throw error;
-      }
-    } catch (err) {
-      console.error("[Analyse] enregistrement", err);
-      setToast({ texte: "Action non enregistrée : vérifie la connexion internet puis refais-la.", erreur: true });
-    }
   }, []);
+
+  // Les écritures partent l'une après l'autre : un « Rentré » tapé juste après
+  // le tir ne doit pas arriver en base avant la création du tir.
+  const fileEcritures = useRef<Promise<void>>(Promise.resolve());
+
+  const appliquerOp = useCallback((op: Op, memoriser = true) => {
+    appliquerLocal(op);
+    if (memoriser) undoRef.current.push(op);
+    fileEcritures.current = fileEcritures.current.then(async () => {
+      try {
+        if (op.supprimes.length) {
+          const { error } = await supabase.from("analyse_actions").delete().in("id", op.supprimes.map((a) => a.id));
+          if (error) throw error;
+        }
+        if (op.crees.length) {
+          const { error } = await supabase.from("analyse_actions").insert(op.crees);
+          if (error) throw error;
+        }
+        for (const m of op.modifs) {
+          const { error } = await supabase.from("analyse_actions").update(m.apres).eq("id", m.id);
+          if (error) throw error;
+        }
+      } catch (err) {
+        console.error("[Analyse] enregistrement", err);
+        // On retire de l'écran ce qui n'a pas été enregistré, pour ne pas laisser croire que c'est sauvé.
+        appliquerLocal(inverse(op));
+        if (memoriser) undoRef.current = undoRef.current.filter((o) => o !== op);
+        setToast({ texte: "Pas de connexion : l'action n'a pas été enregistrée et a été retirée. Refais-la.", erreur: true });
+      }
+    });
+  }, [appliquerLocal]);
 
   const annulerDerniere = useCallback(() => {
     const op = undoRef.current.pop();
@@ -206,20 +220,31 @@ export default function TaggingScreen({
     // L'URL précédente ne sert plus (le File reste gardé par l'onglet pour le retour depuis les stats)
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     setVideoUrl(URL.createObjectURL(f));
+    repriseFaite.current = false;
     onFichier(f);
     if (!match.video_nom) majMatch({ video_nom: f.name, video_taille: f.size });
     else if (match.video_nom !== f.name || Number(match.video_taille) !== f.size) setFichierDifferent({ nom: f.name, taille: f.size });
     else setFichierDifferent(null);
   };
 
+  // Reprise : à la dernière action taguée, sinon au début du match.
+  // Attend que la vidéo et les actions soient chargées (l'ordre varie).
+  const repriseFaite = useRef(false);
+  const reprendre = useCallback(() => {
+    const v = videoRef.current;
+    if (repriseFaite.current || chargement || !v || !v.duration) return;
+    repriseFaite.current = true;
+    const reprise = actions.length ? actions[actions.length - 1].t : debut;
+    if (reprise > 0 && reprise < v.duration) v.currentTime = reprise;
+  }, [actions, chargement, debut]);
+  useEffect(() => { reprendre(); }, [reprendre]);
+
   const onMetadata = () => {
     const v = videoRef.current;
     if (!v) return;
     setDuree(v.duration || 0);
-    // Reprise : à la dernière action taguée, sinon au début du match
-    const reprise = actions.length ? actions[actions.length - 1].t : debut;
-    if (reprise > 0 && reprise < v.duration) v.currentTime = reprise;
     v.playbackRate = vitesse;
+    reprendre();
     dessiner();
   };
 
@@ -311,7 +336,7 @@ export default function TaggingScreen({
     if (!type) return;
     const a: Action = { ...baseAction(modal.t, "rebond"), ...w, rebond: type };
     // Un rebond tranche le tir resté en attente juste avant : il était raté.
-    const attente = [...actions].reverse().find((x) => estTir(x) && x.resultat === "attente" && x.t <= modal.t + 0.01 && modal.t - x.t <= 15);
+    const attente = [...actions].reverse().find((x) => estTir(x) && x.resultat === "attente" && x.t <= modal.t + 0.01 && modal.t - x.t <= 10);
     appliquerOp({
       crees: [a],
       modifs: attente ? [{ id: attente.id, avant: { resultat: "attente" }, apres: { resultat: "rate" } }] : [],
@@ -428,6 +453,13 @@ export default function TaggingScreen({
     ro.observe(wrap);
     return () => ro.disconnect();
   }, [dessiner]);
+
+  const marquerDebut = () => {
+    if (!videoUrl) { setToast({ texte: "Choisis d'abord la vidéo du match" }); return; }
+    const t = Math.round(tempsCourant() * 10) / 10;
+    majMatch({ video_debut: t });
+    setToast({ texte: `Début du match placé à ${fmtTemps(t)} dans la vidéo` });
+  };
 
   const ouvrirCalibrage = () => {
     videoRef.current?.pause();
@@ -551,7 +583,7 @@ export default function TaggingScreen({
           </div>
           <BarreBouton onClick={ouvrirCalibrage} actif={!!calibrage}>{calibrage ? "Recalibrer" : "Calibrer le terrain"}</BarreBouton>
           {calibrage && <BarreBouton onClick={() => setVoirLignes((s) => !s)} actif={voirLignes}>Lignes</BarreBouton>}
-          <BarreBouton onClick={() => videoUrl && majMatch({ video_debut: Math.round(tempsCourant() * 10) / 10 })} title="Marque l'instant actuel comme début du match (vidéo d'une journée entière)">
+          <BarreBouton onClick={marquerDebut} title="Marque l'instant actuel comme début du match (vidéo d'une journée entière)">
             Début du match ici
           </BarreBouton>
           <BarreBouton onClick={() => fileRef.current?.click()}>Vidéo…</BarreBouton>
