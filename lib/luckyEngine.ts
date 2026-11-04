@@ -47,8 +47,10 @@ export type LuckyMsg =
 
 export interface LuckyShot {
   id: number;
-  outcome: "swish" | "made" | "rimout" | "board" | "short";
+  outcome: "swish" | "made" | "rimout" | "board" | "short" | "wide";
   side: 1 | -1;
+  /** 0..1 : à quel point le tir s'écarte du centre (absent chez un joueur pas encore à jour). */
+  offset?: number;
 }
 
 function shuffle<T>(arr: T[]): T[] {
