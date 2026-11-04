@@ -26,6 +26,7 @@ import { GESTURE_WINDOW_MS, TRIGGER_UP, VERTICAL_HOLD_MS } from "@/lib/lancerFra
 import { decideShot, evaluate, isMade, type Evaluation, type Outcome, type ShotResult } from "@/lib/lancerFranc/shot";
 import { C, type SceneEvent } from "@/lib/lancerFranc/scene";
 import { FONT, assetsChanged } from "@/lib/lancerFranc/assets";
+import { loadSponsors } from "@/lib/lancerFranc/sponsors";
 import { playEvent, unlockAudio, vibrate } from "@/lib/lancerFranc/feedback";
 import { ShotScene } from "./lancerFranc/ShotScene";
 import { ShotFeedback } from "./lancerFranc/ShotFeedback";
@@ -157,9 +158,10 @@ function LancerFrancGame({ onExit, duel }: { onExit?: () => void; duel?: DuelOpt
     setPhaseState(next);
   }, []);
 
-  // Le dessin du terrain utilise la police : on le refait dès qu'elle est prête.
+  // Le dessin du terrain utilise la police et les logos des sponsors : on le refait dès qu'ils sont prêts.
   useEffect(() => {
     unlockAudio();
+    void loadSponsors();
     void Promise.all([document.fonts.load(`900 40px Inconsolata`), document.fonts.load(`700 20px Inconsolata`)])
       .then(assetsChanged)
       .catch(() => undefined);

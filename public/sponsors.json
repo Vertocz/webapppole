@@ -1,0 +1,6 @@
+{
+  "_aide": "Dépose le logo dans public/sponsors/ puis ajoute une ligne. Emplacements : planche-gauche, planche-droite, mur.",
+  "sponsors": [
+    { "name": "Malakoff Humanis", "image": "sponsors/malakoff-humanis.png", "slot": "mur", "url": "https://www.malakoffhumanis.com" }
+  ]
+}

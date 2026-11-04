@@ -1,5 +1,5 @@
 // Stickers des sponsors. Tout se règle dans public/sponsors.json, sans toucher au code :
-// on dépose le logo dans public/sponsors/ et on ajoute une ligne.
+// on dépose le logo dans public/sponsors/ et on ajoute une ligne (voir public/sponsors.json).
 //
 // Emplacements :
 //   "planche-gauche" / "planche-droite" : petits stickers en haut de la planche
@@ -33,7 +33,7 @@ let demo = false;
 export async function loadSponsors(): Promise<Sponsor[]> {
   demo = new URLSearchParams(location.search).has("demo");
   try {
-    const res = await fetch("./sponsors.json", { cache: "no-cache" });
+    const res = await fetch("/sponsors.json", { cache: "no-cache" });
     const data = (await res.json()) as { sponsors?: Sponsor[] };
     const list = (data.sponsors ?? []).filter((s) => SLOTS.includes(s.slot));
     loaded = list.map((s) => ({ ...s, img: null }));
@@ -44,7 +44,7 @@ export async function loadSponsors(): Promise<Sponsor[]> {
         s.img = img;
         assetsChanged();
       };
-      img.src = `./${s.image}`;
+      img.src = `/${s.image.replace(/^\/+/, "")}`;
     }
     assetsChanged();
     return list;
