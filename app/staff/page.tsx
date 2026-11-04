@@ -29,8 +29,9 @@ import Card from "@/components/Card";
 import type { Staff, Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
 import NotifModal from "@/components/NotifModal";
+import AnalyseVideoTab from "@/components/analyse/AnalyseVideoTab";
 
-type View = "billets" | "joueurs" | "tournois" | "gares" | "jeux" | "carte" | "victorinis";
+type View = "billets" | "joueurs" | "analyse" | "tournois" | "gares" | "jeux" | "carte" | "victorinis";
 
 export default function StaffPage() {
   const [user, setUser] = useState<Staff | null>(null);
@@ -167,6 +168,8 @@ export default function StaffPage() {
     ...(hasBillets ? [{ id: "billets" as View, label: "Mes billets", icon: "🎫" }] : []),
     ...(hasCarte ? [{ id: "carte" as View, label: "Ma carte", icon: "💳" }] : []),
     { id: "joueurs", label: "Suivi joueurs", icon: "📊" },
+    // Analyse vidéo des matchs : réservée au staff du pôle masculin pour l'instant
+    ...(user.masculin ? [{ id: "analyse" as View, label: "Analyse vidéo", icon: "🎥" }] : []),
     ...(user.masculin ? [{ id: "victorinis" as View, label: "Victorinis", icon: "🃏" }] : []),
     { id: "tournois", label: "Tournois", icon: "🏆" },
     { id: "jeux", label: "Jeux", icon: "🎮" },
@@ -274,6 +277,7 @@ export default function StaffPage() {
           {view === "victorinis" && user.masculin && (
             <VictorinisTab userId={user.id} userType="staff" refreshKey={cartesRefresh} />
           )}
+          {view === "analyse" && user.masculin && <AnalyseVideoTab joueurs={joueurs} staffId={user.id} />}
           {view === "tournois" && <Tournois />}
           {view === "gares" && <GaresLogistique />}
           {view === "jeux" && <GamesTab />}
