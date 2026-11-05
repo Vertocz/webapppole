@@ -16,6 +16,12 @@ import Evolution from "./Evolution";
 
 type Ecran = { id: string; vue: "tagging" | "rapport" } | null;
 
+function nbActions(acts: Action[]) {
+  const r = acts.filter((a) => a.type === "repere").length;
+  const n = acts.length - r;
+  return `${n} action${n > 1 ? "s" : ""}${r ? ` · ${r} repère${r > 1 ? "s" : ""}` : ""}`;
+}
+
 export default function AnalyseVideoTab({ joueurs, staffId }: { joueurs: Joueuse[]; staffId: string }) {
   const [matchs, setMatchs] = useState<Match[]>([]);
   const [actions, setActions] = useState<Action[]>([]);
@@ -151,7 +157,7 @@ export default function AnalyseVideoTab({ joueurs, staffId }: { joueurs: Joueuse
                         {dateMatch(m)}{m.competition ? ` · ${m.competition}` : ""}
                       </p>
                       <p className="font-display text-2xl leading-tight truncate" style={{ color: "var(--text-main)" }}>{titreMatch(m)}</p>
-                      <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{noms} · {acts.length} action{acts.length > 1 ? "s" : ""}</p>
+                      <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{noms} · {nbActions(acts)}</p>
                     </div>
                     <p className="font-display text-3xl" style={{ fontVariantNumeric: "tabular-nums" }}>
                       <span style={{ color: "var(--accent)" }}>{sc.nous}</span>

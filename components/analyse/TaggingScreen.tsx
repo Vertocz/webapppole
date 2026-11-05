@@ -19,7 +19,8 @@ type ModalState =
   | { kind: "tir"; t: number; x: number | null; y: number | null; points: 1 | 2 | null; zone: Zone | null }
   | { kind: "lf"; t: number }
   | { kind: "rebond"; t: number }
-  | { kind: "ballon_gagne" | "ballon_perdu"; t: number };
+  | { kind: "ballon_gagne" | "ballon_perdu"; t: number }
+  | { kind: "repere"; t: number; titre: string; id?: string }; // id : modification d'un repère existant
 
 /** Une modification, enregistrée pour pouvoir l'annuler (Ctrl+Z). */
 interface Op {
@@ -44,6 +45,7 @@ const LIBELLES: Record<TypeAction, string> = {
   rebond: "Rebond",
   ballon_gagne: "Ballon gagné",
   ballon_perdu: "Ballon perdu",
+  repere: "Repère",
 };
 
 /** Zone de l'image réellement occupée par la vidéo (object-fit: contain), relative au conteneur. */
@@ -94,6 +96,7 @@ export default function TaggingScreen({
   const [repereActif, setRepereActif] = useState<string>(REPERES[0].id);
   const [toast, setToast] = useState<{ texte: string; erreur?: boolean } | null>(null);
   const [rebondForce, setRebondForce] = useState<"off" | "def" | null>(null);
+  const [filtreListe, setFiltreListe] = useState<"tout" | "reperes">("tout");
 
   const undoRef = useRef<Op[]>([]);
   const modalRef = useRef<ModalState | null>(null);
@@ -353,6 +356,30 @@ export default function TaggingScreen({
     fermer(true);
   };
 
+  const validerRepere = (titreSaisi: string) => {
+    if (modal?.kind !== "repere") return;
+    const titre = titreSaisi.trim() || null;
+    if (modal.id) {
+      const avant = actions.find((a) => a.id === modal.id);
+      if (avant) appliquerOp({ crees: [], supprimes: [], modifs: [{ id: modal.id, avant: { titre: avant.titre ?? null }, apres: { titre } }] });
+      setModal(null);
+      return;
+    }
+    appliquerOp({ crees: [{ ...baseAction(modal.t, "repere"), titre }], modifs: [], supprimes: [] });
+    fermer(true);
+  };
+
+  const reperes = useMemo(() => actions.filter((a) => a.type === "repere"), [actions]);
+  /** Titres déjà utilisés, du plus récent au plus ancien, pour les retrouver en un clic. */
+  const titresRecents = useMemo(() => {
+    const vus: string[] = [];
+    for (const a of [...reperes].sort((x, y) => y.t - x.t)) {
+      if (a.titre && !vus.includes(a.titre)) vus.push(a.titre);
+      if (vus.length >= 6) break;
+    }
+    return vus;
+  }, [reperes]);
+
   // ─── Résultat en attente ─────────────────────────────────────────────────
 
   const enAttente = useMemo(
@@ -495,11 +522,14 @@ export default function TaggingScreen({
       if (calibMode) { if (e.key === "Escape") setCalibMode(false); return; }
       if (!videoUrl) return;
       const t = videoRef.current?.currentTime ?? 0;
+      // Empêche la lettre du raccourci d'arriver dans le champ qui s'ouvre (titre du repère)
+      if (["t", "l", "b", "g", "p", "n", "r", "m"].includes(k)) e.preventDefault();
       if (k === "t") ouvrirTir(null);
       else if (k === "l") ouvrir({ kind: "lf", t });
       else if (k === "b") ouvrir({ kind: "rebond", t });
       else if (k === "g") ouvrir({ kind: "ballon_gagne", t });
       else if (k === "p") ouvrir({ kind: "ballon_perdu", t });
+      else if (k === "n") ouvrir({ kind: "repere", t, titre: "" });
       else if (k === "r") trancher(enAttente[0], "reussi");
       else if (k === "m") trancher(enAttente[0], "rate");
     };
@@ -523,11 +553,13 @@ export default function TaggingScreen({
     { kind: "rebond", label: "Rebond", touche: "B", couleur: "#C49A28" },
     { kind: "ballon_gagne", label: "Ballon gagné", touche: "G", couleur: "#22c55e" },
     { kind: "ballon_perdu", label: "Ballon perdu", touche: "P", couleur: "#ef4444" },
+    { kind: "repere", label: "Repère (titre libre)", touche: "N", couleur: "var(--text-sub)" },
   ];
 
   const clicBouton = (kind: (typeof boutonsActions)[number]["kind"]) => {
     if (!videoUrl) { setToast({ texte: "Choisis d'abord la vidéo du match" }); return; }
     if (kind === "tir") ouvrirTir(null);
+    else if (kind === "repere") ouvrir({ kind, t: tempsCourant(), titre: "" });
     else ouvrir({ kind, t: tempsCourant() } as ModalState);
   };
 
@@ -702,17 +734,30 @@ export default function TaggingScreen({
               {fmtTemps(temps - debut)}
               <span style={{ color: "var(--text-muted)" }}> · vidéo {fmtTemps(temps)} / {fmtTemps(duree)}</span>
             </span>
-            <input
-              id="analyse-seek"
-              type="range"
-              min={0}
-              max={duree || 0}
-              step={0.1}
-              value={Math.min(temps, duree || 0)}
-              onChange={(e) => allerA(Number(e.target.value))}
-              className="flex-1 min-w-[120px]"
-              aria-label="Position dans la vidéo"
-            />
+            <div className="relative flex-1 min-w-[120px] flex items-center">
+              <input
+                id="analyse-seek"
+                type="range"
+                min={0}
+                max={duree || 0}
+                step={0.1}
+                value={Math.min(temps, duree || 0)}
+                onChange={(e) => allerA(Number(e.target.value))}
+                className="w-full"
+                aria-label="Position dans la vidéo"
+              />
+              {/* Repères sur la barre de lecture */}
+              {duree > 0 && reperes.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => allerA(a.t - 2)}
+                  className="absolute -top-2.5 w-2.5 h-2.5 -translate-x-1/2 rotate-45 rounded-[2px]"
+                  style={{ left: `${Math.min(100, Math.max(0, (a.t / duree) * 100))}%`, background: "var(--accent)", border: "1px solid var(--bg-base)" }}
+                  title={`${fmtTemps(a.t - debut)} · ${a.titre || "Repère"}`}
+                  aria-label={`Aller au repère ${a.titre || "sans titre"}`}
+                />
+              ))}
+            </div>
             <select
               id="analyse-vitesse"
               value={vitesse}
@@ -750,7 +795,7 @@ export default function TaggingScreen({
                   <button
                     key={b.kind}
                     onClick={() => clicBouton(b.kind)}
-                    className={`hover-lift flex items-center justify-between gap-2 px-3 py-3 rounded-xl text-sm font-semibold text-left ${b.kind === "tir" ? "col-span-2" : ""}`}
+                    className={`hover-lift flex items-center justify-between gap-2 px-3 py-3 rounded-xl text-sm font-semibold text-left ${b.kind === "tir" || b.kind === "repere" ? "col-span-2" : ""}`}
                     style={{ background: `color-mix(in srgb, ${b.couleur} 14%, var(--bg-card2))`, border: `1px solid color-mix(in srgb, ${b.couleur} 40%, transparent)`, color: "var(--text-main)" }}
                   >
                     <span>{b.label}</span>
@@ -763,24 +808,69 @@ export default function TaggingScreen({
                     : modeClic === "video"
                     ? "Calibre le terrain pour prendre la position au clic. En attendant, le clic ouvre le terrain dessiné."
                     : "Clic sur la vidéo au déclenchement du tir, puis place-le sur le terrain."}
-                  {" "}Espace : pause · ← → : 5 s · Ctrl+Z : annuler
+                  {" "}Espace : pause · ← → : 5 s · N : repère · Ctrl+Z : annuler
                 </p>
               </div>
 
-              <div className="flex items-center justify-between px-3 pt-3 pb-1">
-                <span style={{ fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-sub)" }}>
-                  Actions · {actions.length}
-                </span>
-                <button onClick={annulerDerniere} className="hover-text-main text-xs" style={{ color: "var(--text-sub)" }}>Annuler la dernière</button>
+              <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-1">
+                <div className="flex rounded-lg p-0.5" style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }} role="group" aria-label="Filtrer la liste">
+                  {([["tout", `Actions · ${actions.length - reperes.length}`], ["reperes", `Repères · ${reperes.length}`]] as const).map(([id, label]) => (
+                    <button
+                      key={id}
+                      onClick={() => setFiltreListe(id)}
+                      className="px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap"
+                      style={filtreListe === id ? { background: "var(--primary)", color: "white" } : { color: "var(--text-muted)" }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={annulerDerniere} className="hover-text-main text-xs whitespace-nowrap" style={{ color: "var(--text-sub)" }}>Annuler la dernière</button>
               </div>
               <ol className="flex-1 min-h-0 overflow-y-auto px-2 pb-3 space-y-1" aria-label="Actions taguées">
                 {chargement && <li className="px-2 py-3 text-sm" style={{ color: "var(--text-muted)" }}>Chargement…</li>}
-                {!chargement && actions.length === 0 && (
+                {!chargement && actions.length === 0 && filtreListe === "tout" && (
                   <li className="px-2 py-3 text-sm" style={{ color: "var(--text-muted)" }}>
                     Aucune action pour l&apos;instant. Lance la vidéo et clique au moment du premier tir.
                   </li>
                 )}
-                {[...actions].reverse().map((a) => (
+                {!chargement && reperes.length === 0 && filtreListe === "reperes" && (
+                  <li className="px-2 py-3 text-sm" style={{ color: "var(--text-muted)" }}>
+                    Aucun repère. Appuie sur N pour marquer un moment à revoir et lui donner un titre.
+                  </li>
+                )}
+                {(filtreListe === "reperes" ? reperes : actions).slice().reverse().map((a) => a.type === "repere" ? (
+                  <li key={a.id}>
+                    <div
+                      className="group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer"
+                      style={{ background: "color-mix(in srgb, var(--accent) 7%, transparent)", borderLeft: "2px solid var(--accent)" }}
+                      onClick={() => allerA(a.t - 2)}
+                      title="Revoir ce moment"
+                    >
+                      <span className="text-xs w-12 shrink-0" style={{ color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>{fmtTemps(a.t - debut)}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm truncate" style={{ color: a.titre ? "var(--text-main)" : "var(--text-muted)" }}>{a.titre || "Sans titre"}</span>
+                        <span className="block text-xs" style={{ color: "var(--accent)" }}>⚑ Repère</span>
+                      </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); ouvrir({ kind: "repere", t: a.t, titre: a.titre ?? "", id: a.id }); }}
+                        className="icon-btn w-7 h-7 rounded-md text-xs shrink-0 opacity-60 group-hover:opacity-100"
+                        aria-label="Modifier le titre"
+                        title="Modifier le titre"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); appliquerOp({ crees: [], modifs: [], supprimes: [a] }); }}
+                        className="icon-btn icon-btn-danger w-7 h-7 rounded-md text-xs shrink-0 opacity-60 group-hover:opacity-100"
+                        aria-label="Supprimer le repère"
+                        title="Supprimer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </li>
+                ) : (
                   <li key={a.id}>
                     <div
                       className="group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer"
@@ -914,12 +1004,83 @@ export default function TaggingScreen({
         );
       })()}
 
+      {modal?.kind === "repere" && (
+        <ModaleRepere
+          key={modal.id ?? "nouveau"}
+          titreInitial={modal.titre}
+          modification={!!modal.id}
+          sousTitre={`à ${fmtTemps(modal.t - debut)}`}
+          recents={titresRecents}
+          onValider={validerRepere}
+          onAnnuler={() => (modal.id ? setModal(null) : fermer(true))}
+        />
+      )}
+
       {(modal?.kind === "ballon_gagne" || modal?.kind === "ballon_perdu") && (
         <Modale titre={LIBELLES[modal.kind]} sousTitre={`à ${fmtTemps(modal.t - debut)}`} onAnnuler={() => fermer(true)}>
           <ChoixJoueur choix={choix({ adversaire: false })} onChoisir={validerBallon} onAnnuler={() => fermer(true)} />
         </Modale>
       )}
     </div>
+  );
+}
+
+function ModaleRepere({
+  titreInitial, modification, sousTitre, recents, onValider, onAnnuler,
+}: {
+  titreInitial: string;
+  modification: boolean;
+  sousTitre: string;
+  recents: string[];
+  onValider: (titre: string) => void;
+  onAnnuler: () => void;
+}) {
+  const [titre, setTitre] = useState(titreInitial);
+  return (
+    <Modale titre={modification ? "Modifier le repère" : "Repère"} sousTitre={sousTitre} onAnnuler={onAnnuler}>
+      <form
+        onSubmit={(e) => { e.preventDefault(); onValider(titre); }}
+        className="space-y-3"
+      >
+        <label htmlFor="analyse-repere-titre" className="block text-xs" style={{ color: "var(--text-sub)" }}>
+          Titre (facultatif) · Entrée pour valider
+        </label>
+        <input
+          id="analyse-repere-titre"
+          autoFocus
+          value={titre}
+          onChange={(e) => setTitre(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onAnnuler(); } }}
+          maxLength={120}
+          placeholder="ex. Repli défensif à revoir"
+          className="w-full rounded-lg px-3 py-2.5 text-sm"
+          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" }}
+        />
+        {recents.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {recents.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => onValider(r)}
+                className="px-2.5 py-1 rounded-lg text-xs font-medium"
+                style={{ background: "color-mix(in srgb, var(--accent) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)", color: "var(--accent)" }}
+                title="Reprendre ce titre"
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          type="submit"
+          className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold"
+          style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "white" }}
+        >
+          {modification ? "Enregistrer" : "Ajouter le repère"}
+        </button>
+      </form>
+    </Modale>
   );
 }
 

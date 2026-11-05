@@ -5,7 +5,7 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type ModeAdversaire = "aucun" | "simple" | "position";
-export type TypeAction = "tir" | "lf" | "rebond" | "ballon_gagne" | "ballon_perdu";
+export type TypeAction = "tir" | "lf" | "rebond" | "ballon_gagne" | "ballon_perdu" | "repere";
 export type Equipe = "nous" | "adversaire";
 export type Resultat = "reussi" | "rate" | "attente";
 export type Zone =
@@ -44,6 +44,8 @@ export interface Action {
   y: number | null;
   resultat: Resultat | null;
   rebond: "off" | "def" | null;
+  /** Repères uniquement : titre libre (absent des autres actions) */
+  titre?: string | null;
 }
 
 // ─── Terrain FIBA 3x3 ────────────────────────────────────────────────────────

@@ -34,7 +34,7 @@ create table if not exists analyse_actions (
   match_id    uuid not null references analyse_matchs(id) on delete cascade,
   -- Instant dans la vidéo, en secondes
   t           real not null,
-  type        text not null check (type in ('tir', 'lf', 'rebond', 'ballon_gagne', 'ballon_perdu')),
+  type        text not null,
   equipe      text not null default 'nous' check (equipe in ('nous', 'adversaire')),
   joueuse_id  text,
   -- Tirs : 1 ou 2 points (lancer franc = 1)
@@ -46,8 +46,16 @@ create table if not exists analyse_actions (
   y           real,
   resultat    text check (resultat in ('reussi', 'rate', 'attente')),
   rebond      text check (rebond in ('off', 'def')),
+  -- Repères : titre libre donné par le coach
+  titre       text,
   cree_le     timestamptz not null default now()
 );
+
+-- Mise à jour d'une table déjà créée : colonne titre et type « repere »
+alter table analyse_actions add column if not exists titre text;
+alter table analyse_actions drop constraint if exists analyse_actions_type_check;
+alter table analyse_actions add constraint analyse_actions_type_check
+  check (type in ('tir', 'lf', 'rebond', 'ballon_gagne', 'ballon_perdu', 'repere'));
 
 create index if not exists analyse_actions_match_idx on analyse_actions (match_id, t);
 

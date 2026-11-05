@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import type { Joueuse } from "@/types";
 import Card from "@/components/Card";
 import {
-  type Action, type Match, type StatsBloc, calculerStats, estTir, fmtLigne, fmtPct, score,
+  type Action, type Match, type StatsBloc, calculerStats, estTir, fmtLigne, fmtPct, fmtTemps, score,
 } from "@/lib/analyse";
 import CarteTirs, { COULEURS_PDF } from "./CarteTirs";
 
@@ -239,6 +239,23 @@ export default function RapportMatch({
         </p>
       </Card>
 
+      {actions.some((a) => a.type === "repere") && (
+        <Card>
+          <p style={labelStyle} className="mb-3">Repères</p>
+          <ol className="space-y-1">
+            {actions.filter((a) => a.type === "repere").map((a) => (
+              <li key={a.id} className="flex gap-3 py-1.5 text-sm" style={{ borderTop: "1px solid var(--border)" }}>
+                <span className="w-14 shrink-0" style={{ color: "var(--accent)", fontVariantNumeric: "tabular-nums" }}>{fmtTemps(a.t - (match.video_debut ?? 0))}</span>
+                <span className="min-w-0" style={{ color: a.titre ? "var(--text-main)" : "var(--text-muted)" }}>{a.titre || "Sans titre"}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="text-[11px] mt-2" style={{ color: "var(--text-muted)" }}>
+            Temps depuis le début du match. Pour revoir un moment, reprends le tagging : les repères y sont cliquables.
+          </p>
+        </Card>
+      )}
+
       {/* Page imprimée pour le PDF (hors écran) */}
       <div ref={printRef} style={{ position: "fixed", left: "-9999px", top: 0, pointerEvents: "none", zIndex: -1 }} aria-hidden="true">
         <PagePDF match={match} ids={idsJoueurs} actions={actions} lignes={lignesEquipe(stats.equipe, stats.adversaire, avecAdv, avecAdv)} stats={stats} nom={nom} sc={sc} avecAdv={avecAdv} />
@@ -338,6 +355,24 @@ function PagePDF({
           </div>
         ))}
       </div>
+
+      {(() => {
+        const reperes = actions.filter((a) => a.type === "repere");
+        if (!reperes.length) return null;
+        const max = 10;
+        return (
+          <div>
+            <p style={lab}>Repères</p>
+            {reperes.slice(0, max).map((a) => (
+              <p key={a.id} style={{ fontSize: 11, margin: "0 0 3px", display: "flex", gap: 10 }}>
+                <span style={{ width: 44, color: "#9A7818", fontVariantNumeric: "tabular-nums" }}>{fmtTemps(a.t - (match.video_debut ?? 0))}</span>
+                <span style={{ color: a.titre ? "#111827" : "#9ca3af" }}>{a.titre || "Sans titre"}</span>
+              </p>
+            ))}
+            {reperes.length > max && <p style={{ fontSize: 10, color: "#6b7280", margin: "4px 0 0" }}>… et {reperes.length - max} autres repères dans l&apos;application</p>}
+          </div>
+        );
+      })()}
 
       <p style={{ marginTop: "auto", fontSize: 9, color: "#9ca3af" }}>
         Stats saisies par le staff à partir de la vidéo. Généré le {new Date().toLocaleDateString("fr-FR")}.

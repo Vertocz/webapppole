@@ -58,8 +58,10 @@ Onglet « Analyse vidéo » de l'espace staff (`components/analyse/`, logique da
 - Clic sur les pieds du tireur au déclenchement du tir → pause → choix du joueur → la vidéo repart.
   Le résultat (rentré / raté) se donne ensuite, et un rebond tagué passe le tir en attente en raté.
 - Position du tir : calibrage du terrain (4 repères minimum) ou terrain dessiné.
-- Raccourcis : Espace, ← →, T tir, L lancer franc, B rebond, G/P ballon gagné/perdu, R/M résultat,
-  1-4 joueur, 0 adversaire, Ctrl+Z annuler.
+- Repères : N (ou le bouton) marque un moment de la vidéo avec un titre libre ; les titres déjà
+  utilisés sont proposés. Repères visibles dans la liste, sur la barre de lecture et dans les stats.
+- Raccourcis : Espace, ← →, T tir, L lancer franc, B rebond, G/P ballon gagné/perdu, N repère,
+  R/M résultat, 1-4 joueur, 0 adversaire, Ctrl+Z annuler.
 - Stats du match, carte des tirs par zone, export PDF et évolution sur plusieurs matchs.
 
 ## Mode hors ligne
