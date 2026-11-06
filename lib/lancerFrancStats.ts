@@ -5,6 +5,10 @@ import { getSessionUser } from "./session";
  * Stats « de tout le temps » du Swish 3x3 (table historique lancer_franc_stats).
  *  - Toujours sauvegardées en local (le jeu marche hors ligne, en avion).
  *  - Synchronisées avec Supabase dès qu'il y a du réseau (table lancer_franc_stats).
+ *  - Records repartis de zéro avec la version Swish 3x3 du 4/11/2026 : la série est dans
+ *    la colonne best_swish (best_streak = archive des anciennes versions, plus utilisée).
+ *    Les clés locales ont changé (« -v2 ») pour que l'ancien record gardé sur le téléphone
+ *    ne revienne pas.
  *  - Le recordman = meilleur pourcentage de réussite parmi ceux qui ont tiré
  *    au moins MIN_ATTEMPTS_RECORD fois (sinon 1/1 = 100 % battrait tout le monde).
  */
@@ -33,8 +37,10 @@ export interface Recordman {
 const EMPTY: LFStats = { makes: 0, attempts: 0, best: 0 };
 const TABLE = "lancer_franc_stats";
 
-const statsKey = (id: string) => `lf-stats:${id}`;
-const RECORD_KEY = "lf-recordman";
+const statsKey = (id: string) => `lf-stats-v2:${id}`;
+const RECORD_KEY = "lf-recordman-v2";
+/** Colonne de la meilleure série (nouvelle version du jeu). */
+const BEST_COL = "best_swish";
 
 export function getIdentity(): LFIdentity {
   try {
@@ -54,6 +60,13 @@ export function loadLocalStats(id: string): LFStats {
   try {
     const raw = localStorage.getItem(statsKey(id));
     if (raw) return { ...EMPTY, ...(JSON.parse(raw) as LFStats) };
+    // Première partie depuis la remise à zéro des records : on garde les compteurs
+    // (réussis / tentés) de l'ancienne sauvegarde, seule la meilleure série repart de 0.
+    const old = localStorage.getItem(`lf-stats:${id}`);
+    if (old) {
+      const o = { ...EMPTY, ...(JSON.parse(old) as LFStats) };
+      return { makes: o.makes, attempts: o.attempts, best: 0 };
+    }
   } catch {
     /* ignoré */
   }
@@ -80,7 +93,7 @@ interface Row {
   nom: string | null;
   makes: number;
   attempts: number;
-  best_streak: number;
+  best_swish: number;
 }
 
 export async function pushStats(who: LFIdentity, s: LFStats): Promise<boolean> {
@@ -93,7 +106,7 @@ export async function pushStats(who: LFIdentity, s: LFStats): Promise<boolean> {
         nom: null,
         makes: s.makes,
         attempts: s.attempts,
-        best_streak: s.best,
+        [BEST_COL]: s.best,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "joueuse_id" }
@@ -109,11 +122,12 @@ export async function pullMyStats(who: LFIdentity): Promise<LFStats | null> {
   try {
     const { data, error } = await supabase
       .from(TABLE)
-      .select("makes,attempts,best_streak")
+      .select(`makes,attempts,${BEST_COL}`)
       .eq("joueuse_id", who.id)
       .maybeSingle();
     if (error || !data) return null;
-    return { makes: data.makes, attempts: data.attempts, best: data.best_streak };
+    const row = data as unknown as { makes: number; attempts: number; best_swish: number };
+    return { makes: row.makes, attempts: row.attempts, best: row.best_swish };
   } catch {
     return null;
   }
@@ -125,7 +139,7 @@ export async function fetchRecordman(who: LFIdentity, mine: LFStats): Promise<Re
   try {
     const { data, error } = await supabase
       .from(TABLE)
-      .select("joueuse_id,prenom,nom,makes,attempts,best_streak")
+      .select(`joueuse_id,prenom,nom,makes,attempts,${BEST_COL}`)
       .gte("attempts", MIN_ATTEMPTS_RECORD);
     if (!error && data) rows = data as Row[];
     else throw new Error("offline");
@@ -136,7 +150,7 @@ export async function fetchRecordman(who: LFIdentity, mine: LFStats): Promise<Re
   const list: Recordman[] = rows.map((r) => ({
     label: `${r.prenom}${r.nom ? ` ${r.nom}` : ""}`,
     pct: r.attempts > 0 ? r.makes / r.attempts : 0,
-    best: r.best_streak,
+    best: r.best_swish,
     attempts: r.attempts,
     mine: r.joueuse_id === who.id,
   }));
@@ -191,7 +205,7 @@ export interface StreakRecord {
   mine: boolean;
 }
 
-const STREAK_KEY = "lf-streak-record";
+const STREAK_KEY = "lf-streak-record-v2";
 
 function loadCachedStreakRecord(): { label: string; best: number } | null {
   try {
@@ -207,14 +221,15 @@ export async function fetchStreakRecord(who: LFIdentity): Promise<{ label: strin
   try {
     const { data, error } = await supabase
       .from(TABLE)
-      .select("joueuse_id,prenom,best_streak")
-      .gt("best_streak", 0)
-      .order("best_streak", { ascending: false })
+      .select(`joueuse_id,prenom,${BEST_COL}`)
+      .gt(BEST_COL, 0)
+      .order(BEST_COL, { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw new Error("offline");
     if (!data) return null;
-    const top = { label: String(data.prenom), best: data.best_streak as number, id: String(data.joueuse_id) };
+    const d = data as unknown as { joueuse_id: string; prenom: string; best_swish: number };
+    const top = { label: String(d.prenom), best: d.best_swish, id: String(d.joueuse_id) };
     try {
       localStorage.setItem(STREAK_KEY, JSON.stringify({ label: top.label, best: top.best }));
     } catch {
