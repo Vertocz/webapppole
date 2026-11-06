@@ -15,8 +15,6 @@ import BadgesTab from "@/components/BadgesTab";
 import BadgePopup from "@/components/BadgePopup";
 import GamesTab from "@/components/games/GamesTab";
 import VictorinisTab from "@/components/VictorinisTab";
-import CarteModal from "@/components/CarteModal";
-import { tirerCarte, type CarteGagnee } from "@/lib/victorinis";
 import type { Joueuse } from "@/types";
 import { supabase } from "@/lib/supabase";
 import { getSession, updateSessionUser } from "@/lib/session";
@@ -54,8 +52,6 @@ export default function JoueuseePage() {
   const router = useRouter();
   const { checkAndAward } = useBadges();
   const [hasQuestionnaire, setHasQuestionnaire] = useState(false);
-  const [carteGagnee, setCarteGagnee] = useState<CarteGagnee | null>(null);
-  const [cartesRefresh, setCartesRefresh] = useState(0);
 
   useEffect(() => {
     const session = getSession<Joueuse>();
@@ -137,16 +133,6 @@ export default function JoueuseePage() {
     });
   }, [user, checkAndAward]);
 
-  // Une carte Victorinis par NOUVEL enregistrement (pas à la modification)
-  const handleNewEntry = useCallback(() => {
-    if (!user?.victorinis) return;
-    tirerCarte(user.id, "joueur").then((c) => {
-      if (!c) return;
-      setCarteGagnee(c);
-      setCartesRefresh((n) => n + 1);
-    });
-  }, [user]);
-
   // Récompenses des enregistrements faits hors ligne, distribuées après l'envoi
   useEffect(() => {
     if (!user) return;
@@ -154,12 +140,11 @@ export default function JoueuseePage() {
       const n = consumePendingRewards(user.id);
       if (!n) return;
       handleSave();
-      for (let i = 0; i < n; i++) handleNewEntry();
     };
     distribute();
     window.addEventListener(SYNC_EVENT, distribute);
     return () => window.removeEventListener(SYNC_EVENT, distribute);
-  }, [user?.id, handleSave, handleNewEntry]);
+  }, [user?.id, handleSave]);
 
   const handlePhoneUpdated = (newPhone: string) => {
     setTelephone(newPhone);
@@ -211,11 +196,11 @@ export default function JoueuseePage() {
         theme="joueur"
       >
         {activeTab === "billets" && <Billets userId={user.id} />}
-        {activeTab === "sportif" && <SuiviSportif userId={user.id} onSave={handleSave} onCreate={handleNewEntry} />}
-        {activeTab === "forme" && <SuiviForme userId={user.id} onSave={handleSave} onCreate={handleNewEntry} />}
-        {activeTab === "mentale" && isMasculin && <PreparationMentale userId={user.id} onSave={handleSave} onCreate={handleNewEntry} />}
+        {activeTab === "sportif" && <SuiviSportif userId={user.id} onSave={handleSave} />}
+        {activeTab === "forme" && <SuiviForme userId={user.id} onSave={handleSave} />}
+        {activeTab === "mentale" && isMasculin && <PreparationMentale userId={user.id} onSave={handleSave} />}
         {activeTab === "victorinis" && user.victorinis && (
-          <VictorinisTab userId={user.id} userType="joueur" refreshKey={cartesRefresh} />
+          <VictorinisTab userId={user.id} userType="joueur" />
         )}
         {activeTab === "tournois" && <Tournois />}
         {activeTab === "jeux" && user.acces_jeux && <GamesTab />}
@@ -238,9 +223,6 @@ export default function JoueuseePage() {
 
       {notifId && <NotifModal notifId={notifId} onClose={() => setNotifId(null)} />}
 
-      {carteGagnee && (
-        <CarteModal personne={carteGagnee.personne} rarete={carteGagnee.rarete} onClose={() => setCarteGagnee(null)} />
-      )}
     </>
   );
 }
