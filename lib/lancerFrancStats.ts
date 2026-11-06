@@ -5,10 +5,10 @@ import { getSessionUser } from "./session";
  * Stats « de tout le temps » du Swish 3x3 (table historique lancer_franc_stats).
  *  - Toujours sauvegardées en local (le jeu marche hors ligne, en avion).
  *  - Synchronisées avec Supabase dès qu'il y a du réseau (table lancer_franc_stats).
- *  - Records repartis de zéro avec la version Swish 3x3 du 4/11/2026 : la série est dans
- *    la colonne best_swish (best_streak = archive des anciennes versions, plus utilisée).
- *    Les clés locales ont changé (« -v2 ») pour que l'ancien record gardé sur le téléphone
- *    ne revienne pas.
+ *  - Stats reparties de zéro avec la version Swish 3x3 du 4/11/2026 : colonnes makes_swish,
+ *    attempts_swish et best_swish (makes / attempts / best_streak = archives des anciennes
+ *    versions, plus utilisées). Les clés locales ont changé (« -v3 ») pour que les anciennes
+ *    stats gardées sur le téléphone ne reviennent pas.
  *  - Le recordman = meilleur pourcentage de réussite parmi ceux qui ont tiré
  *    au moins MIN_ATTEMPTS_RECORD fois (sinon 1/1 = 100 % battrait tout le monde).
  */
@@ -37,8 +37,8 @@ export interface Recordman {
 const EMPTY: LFStats = { makes: 0, attempts: 0, best: 0 };
 const TABLE = "lancer_franc_stats";
 
-const statsKey = (id: string) => `lf-stats-v2:${id}`;
-const RECORD_KEY = "lf-recordman-v2";
+const statsKey = (id: string) => `lf-stats-v3:${id}`;
+const RECORD_KEY = "lf-recordman-v3";
 /** Colonne de la meilleure série (nouvelle version du jeu). */
 const BEST_COL = "best_swish";
 
@@ -60,13 +60,6 @@ export function loadLocalStats(id: string): LFStats {
   try {
     const raw = localStorage.getItem(statsKey(id));
     if (raw) return { ...EMPTY, ...(JSON.parse(raw) as LFStats) };
-    // Première partie depuis la remise à zéro des records : on garde les compteurs
-    // (réussis / tentés) de l'ancienne sauvegarde, seule la meilleure série repart de 0.
-    const old = localStorage.getItem(`lf-stats:${id}`);
-    if (old) {
-      const o = { ...EMPTY, ...(JSON.parse(old) as LFStats) };
-      return { makes: o.makes, attempts: o.attempts, best: 0 };
-    }
   } catch {
     /* ignoré */
   }
@@ -91,8 +84,8 @@ interface Row {
   joueuse_id: string;
   prenom: string;
   nom: string | null;
-  makes: number;
-  attempts: number;
+  makes_swish: number;
+  attempts_swish: number;
   best_swish: number;
 }
 
@@ -104,8 +97,8 @@ export async function pushStats(who: LFIdentity, s: LFStats): Promise<boolean> {
         joueuse_id: who.id,
         prenom: who.label,
         nom: null,
-        makes: s.makes,
-        attempts: s.attempts,
+        makes_swish: s.makes,
+        attempts_swish: s.attempts,
         [BEST_COL]: s.best,
         updated_at: new Date().toISOString(),
       },
@@ -122,12 +115,12 @@ export async function pullMyStats(who: LFIdentity): Promise<LFStats | null> {
   try {
     const { data, error } = await supabase
       .from(TABLE)
-      .select(`makes,attempts,${BEST_COL}`)
+      .select(`makes_swish,attempts_swish,${BEST_COL}`)
       .eq("joueuse_id", who.id)
       .maybeSingle();
     if (error || !data) return null;
-    const row = data as unknown as { makes: number; attempts: number; best_swish: number };
-    return { makes: row.makes, attempts: row.attempts, best: row.best_swish };
+    const row = data as unknown as { makes_swish: number; attempts_swish: number; best_swish: number };
+    return { makes: row.makes_swish, attempts: row.attempts_swish, best: row.best_swish };
   } catch {
     return null;
   }
@@ -139,8 +132,8 @@ export async function fetchRecordman(who: LFIdentity, mine: LFStats): Promise<Re
   try {
     const { data, error } = await supabase
       .from(TABLE)
-      .select(`joueuse_id,prenom,nom,makes,attempts,${BEST_COL}`)
-      .gte("attempts", MIN_ATTEMPTS_RECORD);
+      .select(`joueuse_id,prenom,nom,makes_swish,attempts_swish,${BEST_COL}`)
+      .gte("attempts_swish", MIN_ATTEMPTS_RECORD);
     if (!error && data) rows = data as Row[];
     else throw new Error("offline");
   } catch {
@@ -149,9 +142,9 @@ export async function fetchRecordman(who: LFIdentity, mine: LFStats): Promise<Re
   }
   const list: Recordman[] = rows.map((r) => ({
     label: `${r.prenom}${r.nom ? ` ${r.nom}` : ""}`,
-    pct: r.attempts > 0 ? r.makes / r.attempts : 0,
+    pct: r.attempts_swish > 0 ? r.makes_swish / r.attempts_swish : 0,
     best: r.best_swish,
-    attempts: r.attempts,
+    attempts: r.attempts_swish,
     mine: r.joueuse_id === who.id,
   }));
   const best = pickWithMine(list, who, mine, true);
@@ -205,7 +198,7 @@ export interface StreakRecord {
   mine: boolean;
 }
 
-const STREAK_KEY = "lf-streak-record-v2";
+const STREAK_KEY = "lf-streak-record-v3";
 
 function loadCachedStreakRecord(): { label: string; best: number } | null {
   try {
