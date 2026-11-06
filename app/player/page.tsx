@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Layout from "@/components/Layout";
 import ThemeProvider from "@/components/ThemeProvider";
 import Billets, { prefetchBilletsOffline } from "@/components/Billets";
-import { prefetchQuizOffline } from "@/components/games/Quiz";
 import CarteAvantage from "@/components/CarteAvantage";
 import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
@@ -63,9 +62,8 @@ export default function JoueuseePage() {
     setUser(parsed);
     setTelephone(parsed.numero_tel ?? "");
 
-    // Prépare le hors ligne : billets PDF à venir + questions du quiz
+    // Prépare le hors ligne : billets PDF à venir
     prefetchBilletsOffline(parsed.id);
-    if (parsed.acces_jeux) prefetchQuizOffline();
 
     // Rafraîchit le profil (accès jeux, Victorinis…) maintenant que la session dure
     supabase

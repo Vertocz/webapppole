@@ -1,7 +1,7 @@
 /**
  * luckyEngine.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Logique du « Lucky Luke » au lancer franc, sans React ni réseau.
+ * Logique du « Lucky Luke » au Swish 3x3, sans React ni réseau.
  *
  * Règles :
  *  - Les joueurs sont dans un ordre fixe, en cercle.

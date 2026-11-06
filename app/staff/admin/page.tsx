@@ -12,7 +12,6 @@ import GamesAccessPanel from "@/components/GamesAccessPanel";
 import CartesPanel from "@/components/CartesPanel";
 import type { Staff, Joueuse } from "@/types";
 import QuestionnaireAdmin from "@/components/QuestionnaireAdmin";
-import QuizAdmin from "@/components/QuizAdmin";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,7 +22,7 @@ interface UploadedFile {
   error?: string;
 }
 
-type AdminTab = "billets" | "cartes" | "joueurs" | "jeux" | "notifications" | "badges" | "questionnaires" | "quiz";
+type AdminTab = "billets" | "cartes" | "joueurs" | "jeux" | "notifications" | "badges" | "questionnaires";
 
 interface ConfirmModal {
   title: string;
@@ -72,7 +71,6 @@ export default function AdminPage() {
     { id: "badges",        label: "Badges",         icon: "🏅" },
     { id: "notifications", label: "Notifications",  icon: "🔔" },
     ...(user.feminin ? [{ id: "questionnaires" as const, label: "Questionnaires", icon: "📝" }] : []),
-    ...(user.masculin ? [{ id: "quiz" as const, label: "Quiz", icon: "❓" }] : []),
   ];
 
   return (
@@ -134,7 +132,6 @@ export default function AdminPage() {
           {tab === "badges"        && <ManualBadgeAssign staffPhone={user.numero_tel} staffId={user.id} />}
           {tab === "notifications" && <PushNotificationPanel staffId={user.id} pole={pole} />}
           {tab === "questionnaires" && user.feminin && <QuestionnaireAdmin staffId={user.id} />}
-          {tab === "quiz" && user.masculin && <QuizAdmin staffId={user.id} />}
 
         </main>
       </div>

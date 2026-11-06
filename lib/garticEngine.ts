@@ -17,7 +17,7 @@
  *    un téléphone qui se verrouille ou rate un message se remet à jour tout seul.
  */
 
-import type { PlayerInfo } from "./p2pRoom";
+import type { PlayerInfo } from "./netTypes";
 
 export type EntryType = "text" | "drawing";
 

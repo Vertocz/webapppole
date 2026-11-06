@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RoomContext } from "./RoomConnect";
-import type { NetMessage } from "@/lib/p2pRoom";
+import type { NetMessage } from "@/lib/netTypes";
 import {
   BOMB_FUSE_TICKS,
   COLS,
@@ -33,7 +33,7 @@ import {
 } from "@/lib/bombermanEngine";
 
 const NEXT_ROUND_DELAY_MS = 5000;
-const POS_SEND_MS = 66; // ~15 envois / s quand on bouge
+const POS_SEND_MS = 90; // ~11 envois / s quand on bouge (débit limité par Supabase Realtime)
 const POS_HEARTBEAT_MS = 200; // même à l'arrêt : une position perdue est vite rattrapée
 const GRID_RESEND_TICKS = 20;
 

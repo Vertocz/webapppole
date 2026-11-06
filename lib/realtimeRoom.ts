@@ -3,25 +3,23 @@
 /**
  * realtimeRoom.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Transport alternatif à p2pRoom.ts : au lieu d'une connexion directe entre
- * téléphones (WebRTC + QR code, qui marche sans internet), on passe par un
- * canal Supabase Realtime partagé — utile quand tout le monde a du réseau et
- * qu'on veut éviter la manip du hotspot/QR code (ex : pas tous dans le même
- * avion, ou juste plus simple).
- *
- * Exactement la même interface de messages (NetMessage) que p2pRoom.ts, pour
- * que les jeux n'aient rien à savoir du transport utilisé.
+ * Transport des jeux à plusieurs : un canal Supabase Realtime partagé, rejoint
+ * avec un code à 5 caractères. Les jeux n'échangent que des NetMessage (lib/netTypes.ts).
  */
 
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
-import type { NetMessage, PlayerInfo } from "./p2pRoom";
+import type { NetMessage, PlayerInfo } from "./netTypes";
 
 // Même projet Supabase que le reste de l'app (lib/supabase.ts)
 const SUPABASE_URL = "https://fxvotvtapcwzvjhfreqv.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ4dm90dnRhcGN3enZqaGZyZXF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5ODU0MzMsImV4cCI6MjA3NzU2MTQzM30.-GHrLdGYicmtN2lx8MYkQlrnWKcxrcARp_tY6Cno3RQ";
 
-const realtimeClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Par défaut, Realtime limite chaque client à ~10 messages/s : trop juste pour Bomberman
+// (positions envoyées en continu). Le plan Supabase fixe de toute façon le plafond global.
+const realtimeClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  realtime: { params: { eventsPerSecond: 40 } },
+});
 
 function newId(): string {
   return Math.random().toString(36).slice(2, 10);

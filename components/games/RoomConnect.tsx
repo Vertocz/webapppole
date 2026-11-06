@@ -1,11 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { HostRoom, ClientRoom, NetMessage, PlayerInfo } from "@/lib/p2pRoom";
+import type { NetMessage, PlayerInfo } from "@/lib/netTypes";
 import { RealtimeRoom, generateRoomCode } from "@/lib/realtimeRoom";
 import { getIdentity } from "@/lib/lancerFrancStats";
-import QRCodeDisplay from "./QRCodeDisplay";
-import QRScanner from "./QRScanner";
 
 export interface RoomContext {
   role: "host" | "client" | "solo";
@@ -17,18 +15,12 @@ export interface RoomContext {
   onMessage: (cb: (msg: NetMessage, fromPeerId?: string) => void) => () => void;
 }
 
-type Transport = "local" | "internet";
+type Step = "choice" | "name" | "lobby";
 
-type Step =
-  | "choice"
-  | "preparing"
-  | "internet-lobby"
-  | "name"
-  | "host-lobby"
-  | "host-scan-answer"
-  | "join-scan-offer"
-  | "join-waiting";
-
+/**
+ * Salon de jeu par internet (Supabase Realtime) : l'hôte crée une partie et donne
+ * un code à 5 caractères, les autres le saisissent.
+ */
 export default function RoomConnect({
   gameName,
   minPlayers = 1,
@@ -41,24 +33,22 @@ export default function RoomConnect({
   children: (ctx: RoomContext) => React.ReactNode;
 }) {
   const [step, setStep] = useState<Step>("choice");
-  const [mode, setMode] = useState<"host" | "client" | null>(null);
+  const [mode, setMode] = useState<"host" | "client" | "solo" | null>(null);
   const [name, setName] = useState("");
   // Prénom du compte connecté : on ne le redemande pas.
   const [knownName, setKnownName] = useState<string | null>(null);
   const [players, setPlayers] = useState<PlayerInfo[]>([]);
-  const [invitePayload, setInvitePayload] = useState<string | null>(null);
-  const [pendingPeerId, setPendingPeerId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [myId, setMyId] = useState("host");
+  const [myId, setMyId] = useState("solo");
   const [error, setError] = useState("");
-  const [transport, setTransport] = useState<Transport>("local");
   const [roomCode, setRoomCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
   const [busy, setBusy] = useState(false);
-  // Suivi de la liaison après le scan (côté hôte : l'invité en cours ; côté invité : l'hôte).
-  const [connecting, setConnecting] = useState<{ peerId: string | null; since: number } | null>(null);
-  const [link, setLink] = useState<{ connected: boolean; failed: boolean; text: string } | null>(null);
+
+  const realtimeRef = useRef<RealtimeRoom | null>(null);
+  const readyRef = useRef(false);
+  const messageHandlers = useRef<((msg: NetMessage, from?: string) => void)[]>([]);
 
   useEffect(() => {
     const who = getIdentity();
@@ -68,60 +58,12 @@ export default function RoomConnect({
     }
   }, []);
 
-  // Relève l'état de la liaison toutes les 500 ms tant qu'une connexion est en cours.
-  useEffect(() => {
-    if (!connecting) {
-      setLink(null);
-      return;
-    }
-    const read = () => {
-      if (connecting.peerId) {
-        void hostRef.current?.refreshStats(connecting.peerId);
-        setLink(hostRef.current?.linkState(connecting.peerId) ?? null);
-      } else {
-        void clientRef.current?.refreshStats();
-        setLink(clientRef.current?.linkState() ?? null);
-      }
-    };
-    read();
-    const id = window.setInterval(read, 500);
-    return () => window.clearInterval(id);
-  }, [connecting]);
-
-  // Connexion établie : on n'a plus rien à suivre.
-  useEffect(() => {
-    if (connecting && link?.connected) setConnecting(null);
-  }, [connecting, link]);
-
-  const [, setNow] = useState(0);
-  useEffect(() => {
-    if (!connecting) return;
-    const id = window.setInterval(() => setNow((n) => n + 1), 1000);
-    return () => window.clearInterval(id);
-  }, [connecting]);
-
-  const LINK_TIMEOUT_MS = 20000;
-  const linkFailed = !!connecting && (!!link?.failed || Date.now() - connecting.since > LINK_TIMEOUT_MS);
-
-  const retryHostInvite = async () => {
-    if (connecting?.peerId) hostRef.current?.dropPeer(connecting.peerId);
-    setConnecting(null);
-    await inviteNext();
-  };
-
-  const realtimeRef = useRef<RealtimeRoom | null>(null);
-  const readyRef = useRef(false);
-
-  // Quitte proprement le salon internet quand le composant est démonté
+  // Quitte proprement le salon quand le composant est démonté
   useEffect(() => {
     return () => {
       realtimeRef.current?.leave();
     };
   }, []);
-
-  const hostRef = useRef<HostRoom | null>(null);
-  const clientRef = useRef<ClientRoom | null>(null);
-  const messageHandlers = useRef<((msg: NetMessage, from?: string) => void)[]>([]);
 
   const registerHandler = useCallback((cb: (msg: NetMessage, from?: string) => void) => {
     messageHandlers.current.push(cb);
@@ -130,113 +72,7 @@ export default function RoomConnect({
     };
   }, []);
 
-  const startHost = () => {
-    hostRef.current = new HostRoom();
-    hostRef.current.onMessage((msg, from) =>
-      messageHandlers.current.forEach((h) => h(msg, from))
-    );
-    // La liste suit les connexions réelles (un invité n'est « connecté » qu'à l'ouverture du canal,
-    // après le scan de sa réponse) : sans ça, le dernier joueur ajouté manquait au lancement.
-    hostRef.current.onPlayersChange((list) => setPlayers(list));
-    setPlayers(hostRef.current.players);
-    setMode("host");
-    if (knownName) {
-      setStep("preparing");
-      void confirmNameHost();
-    } else setStep("name");
-  };
-
-  const startClient = () => {
-    clientRef.current = new ClientRoom();
-    setMode("client");
-    setStep(knownName ? "join-scan-offer" : "name");
-  };
-
-  const soloMode = () => {
-    setMode(null);
-    setMyId("solo");
-    setPlayers([{ id: "solo", name: "Moi" }]);
-    setReady(true);
-  };
-
-  const confirmNameHost = async () => {
-    if (!hostRef.current) return;
-    hostRef.current.players[0].name = name || "Hôte";
-    setPlayers([...hostRef.current.players]);
-    await inviteNext();
-  };
-
-  const inviteNext = async () => {
-    if (!hostRef.current) return;
-    setError("");
-    try {
-      const guestHint = `Joueur ${hostRef.current.players.length + 1}`;
-      const { peerId, qrPayload } = await hostRef.current.createInvite(guestHint);
-      setPendingPeerId(peerId);
-      setInvitePayload(qrPayload);
-      setStep("host-lobby");
-    } catch {
-      setError("Impossible de créer l'invitation. Réessaie.");
-      setStep((cur) => (cur === "preparing" ? "choice" : cur));
-    }
-  };
-
-  const confirmNameClient = () => setStep("join-scan-offer");
-
-  const handleScannedOffer = async (data: string) => {
-    if (!clientRef.current) return;
-    setError("");
-    try {
-      const answerPayload = await clientRef.current.joinFromOffer(data, name || "Joueur");
-      clientRef.current.onMessage((msg) => {
-        if (msg.type === "welcome") {
-          setMyId(msg.you);
-          setPlayers(msg.players);
-          setReady(true);
-        }
-        if (msg.type === "players") setPlayers(msg.players);
-        messageHandlers.current.forEach((h) => h(msg));
-      });
-      setInvitePayload(answerPayload);
-      setConnecting({ peerId: null, since: Date.now() });
-      setStep("join-waiting");
-    } catch {
-      setError("QR invalide ou expiré, réessaie.");
-      setStep("join-scan-offer");
-    }
-  };
-
-  const handleScannedAnswer = async (data: string) => {
-    if (!hostRef.current || !pendingPeerId) return;
-    setError("");
-    try {
-      await hostRef.current.completeInvite(pendingPeerId, data);
-      setConnecting({ peerId: pendingPeerId, since: Date.now() });
-      setPendingPeerId(null);
-      setInvitePayload(null);
-      setStep("host-lobby");
-      setPlayers([...hostRef.current.players]);
-    } catch {
-      setError("QR invalide ou expiré, réessaie.");
-      setStep("host-lobby");
-    }
-  };
-
-  // ── Mode internet (Supabase Realtime) ─────────────────────────────────────
-  const startInternetHost = () => {
-    setMode("host");
-    const code = generateRoomCode();
-    setRoomCode(code);
-    if (knownName) void connectInternet(code, true);
-    else setStep("name");
-  };
-
-  const startInternetClient = () => {
-    setMode("client");
-    setStep("name");
-  };
-
-  const connectInternet = async (code: string, asHost: boolean) => {
+  const connect = async (code: string, asHost: boolean) => {
     setError("");
     setBusy(true);
     try {
@@ -255,7 +91,7 @@ export default function RoomConnect({
         if (!readyRef.current) setLobbyPlayers(p);
       });
       setMyId(room.myId);
-      setStep("internet-lobby");
+      setStep("lobby");
     } catch {
       setError("Connexion impossible. Vérifie ta connexion internet et le code.");
     } finally {
@@ -263,7 +99,27 @@ export default function RoomConnect({
     }
   };
 
-  const launchInternetGame = () => {
+  const startHost = () => {
+    setMode("host");
+    const code = generateRoomCode();
+    setRoomCode(code);
+    if (knownName) void connect(code, true);
+    else setStep("name");
+  };
+
+  const startClient = () => {
+    setMode("client");
+    setStep("name");
+  };
+
+  const soloMode = () => {
+    setMode("solo");
+    setMyId("solo");
+    setPlayers([{ id: "solo", name: "Moi" }]);
+    setReady(true);
+  };
+
+  const launch = () => {
     const room = realtimeRef.current;
     if (!room) return;
     const me: PlayerInfo = { id: room.myId, name: name.trim() || "Hôte" };
@@ -275,24 +131,16 @@ export default function RoomConnect({
     setReady(true);
   };
 
-  const send = useCallback(
-    (msg: NetMessage) => {
-      if (transport === "internet") {
-        realtimeRef.current?.send(msg);
-        return;
-      }
-      if (mode === "host") hostRef.current?.broadcast(msg);
-      else if (mode === "client") clientRef.current?.send(msg);
-    },
-    [mode, transport]
-  );
+  const send = useCallback((msg: NetMessage) => {
+    realtimeRef.current?.send(msg);
+  }, []);
 
   if (ready) {
     return (
       <>
         {children({
           role: mode === "host" ? "host" : mode === "client" ? "client" : "solo",
-          myId: transport === "local" && mode === "host" ? "host" : myId,
+          myId,
           players,
           send,
           broadcast: send,
@@ -313,70 +161,22 @@ export default function RoomConnect({
 
       {step === "choice" && (
         <div className="space-y-3">
-          <div
-            className="flex rounded-xl p-1 gap-1"
-            style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}
+          <button
+            onClick={startHost}
+            disabled={busy}
+            className="w-full py-3 rounded-xl font-medium text-sm disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "white" }}
           >
-            {(["local", "internet"] as Transport[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTransport(t)}
-                className="flex-1 py-2 rounded-lg text-xs font-medium transition-all"
-                style={
-                  transport === t
-                    ? { background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "white" }
-                    : { color: "var(--text-muted)" }
-                }
-              >
-                {t === "local" ? "📶 Sans internet (avion)" : "🌐 Avec internet"}
-              </button>
-            ))}
-          </div>
-
-          {transport === "local" ? (
-            <>
-              <button
-                onClick={startHost}
-                className="w-full py-3 rounded-xl font-medium text-sm"
-                style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "white" }}
-              >
-                📶 Créer une partie (hôte)
-              </button>
-              <button
-                onClick={startClient}
-                className="w-full py-3 rounded-xl font-medium text-sm"
-                style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
-              >
-                🔗 Rejoindre une partie
-              </button>
-              <p className="text-[11px] text-center pt-1" style={{ color: "var(--text-muted)" }}>
-                Aucune connexion internet requise — un joueur active son partage de
-                connexion, les autres se connectent à son réseau puis scannent un QR code.
-              </p>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={startInternetHost}
-                className="w-full py-3 rounded-xl font-medium text-sm"
-                style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "white" }}
-              >
-                🌐 Créer une partie
-              </button>
-              <button
-                onClick={startInternetClient}
-                className="w-full py-3 rounded-xl font-medium text-sm"
-                style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
-              >
-                🔗 Rejoindre avec un code
-              </button>
-              <p className="text-[11px] text-center pt-1" style={{ color: "var(--text-muted)" }}>
-                Tout le monde doit avoir une connexion internet. Pas de QR code :
-                l&apos;hôte donne un code à 5 caractères.
-              </p>
-            </>
-          )}
-
+            {busy ? "Connexion…" : "🌐 Créer une partie"}
+          </button>
+          <button
+            onClick={startClient}
+            disabled={busy}
+            className="w-full py-3 rounded-xl font-medium text-sm disabled:opacity-50"
+            style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
+          >
+            🔗 Rejoindre avec un code
+          </button>
           {allowSolo && (
             <button
               onClick={soloMode}
@@ -386,13 +186,10 @@ export default function RoomConnect({
               🧍 Jouer seul / entraînement
             </button>
           )}
+          <p className="text-[11px] text-center pt-1" style={{ color: "var(--text-muted)" }}>
+            Connexion internet nécessaire. L&apos;hôte donne un code à 5 caractères aux autres joueurs.
+          </p>
         </div>
-      )}
-
-      {step === "preparing" && (
-        <p className="text-sm text-center py-6" style={{ color: "var(--text-muted)" }}>
-          Préparation de l&apos;invitation…
-        </p>
       )}
 
       {step === "name" && (
@@ -410,175 +207,39 @@ export default function RoomConnect({
               style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" }}
             />
           )}
-          {transport === "internet" && mode === "client" && (
+          {mode === "client" && (
             <input
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
               placeholder="CODE"
               maxLength={5}
+              autoFocus
               className="w-full px-4 py-3 rounded-xl outline-none text-lg text-center font-mono tracking-[0.4em]"
               style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-main)" }}
             />
           )}
           <button
-            onClick={() => {
-              if (transport === "internet") {
-                if (mode === "host") connectInternet(roomCode, true);
-                else connectInternet(joinCode, false);
-              } else if (mode === "host") confirmNameHost();
-              else confirmNameClient();
-            }}
-            disabled={
-              !name.trim() ||
-              busy ||
-              (transport === "internet" && mode === "client" && joinCode.length < 5)
-            }
+            onClick={() => (mode === "host" ? connect(roomCode, true) : connect(joinCode, false))}
+            disabled={!name.trim() || busy || (mode === "client" && joinCode.length < 5)}
             className="w-full py-3 rounded-xl font-medium text-sm disabled:opacity-40"
             style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "white" }}
           >
             {busy ? "Connexion…" : "Continuer"}
           </button>
-        </div>
-      )}
-
-      {step === "host-lobby" && (
-        <div className="space-y-4">
-          {invitePayload && (
-            <div className="text-center space-y-3">
-              <p className="text-sm" style={{ color: "var(--text-sub)" }}>
-                Fais scanner ce QR au joueur suivant :
-              </p>
-              <div className="flex justify-center">
-                <QRCodeDisplay data={invitePayload} />
-              </div>
-              <button
-                onClick={() => setStep("host-scan-answer")}
-                className="w-full py-3 rounded-xl font-medium text-sm"
-                style={{ background: "linear-gradient(135deg,var(--accent),var(--accent2))", color: "white" }}
-              >
-                📷 Scanner sa réponse
-              </button>
-            </div>
-          )}
-
-          {connecting?.peerId && (
-            <div
-              className="rounded-xl px-3 py-3 text-sm space-y-2"
-              style={{ background: "var(--bg-input)", border: `1px solid ${linkFailed ? "#f87171" : "var(--border)"}` }}
-            >
-              <p style={{ color: linkFailed ? "#f87171" : "var(--text-main)" }}>
-                {linkFailed
-                  ? "La connexion n'a pas abouti."
-                  : "Connexion du joueur en cours… ne quittez pas cet écran."}
-              </p>
-              {linkFailed && (
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  Vérifiez que les deux téléphones sont sur le même réseau (hotspot de l&apos;un des deux), puis recommencez
-                  avec un nouveau QR.
-                </p>
-              )}
-              {link && (
-                <p className="text-[10px] whitespace-pre-wrap break-all" style={{ color: "var(--text-sub)" }}>
-                  {link.text}
-                </p>
-              )}
-              {linkFailed && (
-                <button
-                  onClick={retryHostInvite}
-                  className="w-full py-2.5 rounded-xl text-sm font-medium"
-                  style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
-                >
-                  Réessayer avec un nouveau QR
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <p className="text-xs uppercase tracking-widest" style={{ color: "var(--text-sub)" }}>
-              Joueurs connectés ({players.length})
-            </p>
-            {players.map((p) => (
-              <div
-                key={p.id}
-                className="px-3 py-2 rounded-lg text-sm"
-                style={{ background: "var(--bg-input)", color: "var(--text-main)" }}
-              >
-                {p.name}
-              </div>
-            ))}
-          </div>
-
-          {!invitePayload && (
-            <button
-              onClick={inviteNext}
-              className="w-full py-2.5 rounded-xl text-sm font-medium"
-              style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
-            >
-              ➕ Ajouter un joueur
-            </button>
-          )}
-
           <button
-            onClick={() => setReady(true)}
-            disabled={players.length < minPlayers}
-            className="w-full py-3.5 rounded-xl font-display tracking-widest text-sm disabled:opacity-40"
-            style={{ background: "linear-gradient(135deg,var(--primary),var(--primary-light))", color: "white" }}
+            onClick={() => {
+              setStep("choice");
+              setError("");
+            }}
+            className="w-full py-2 text-xs"
+            style={{ color: "var(--text-muted)" }}
           >
-            LANCER LA PARTIE
+            Retour
           </button>
         </div>
       )}
 
-      {step === "host-scan-answer" && (
-        <QRScanner onScan={handleScannedAnswer} onCancel={() => setStep("host-lobby")} />
-      )}
-
-      {step === "join-scan-offer" && (
-        <div className="space-y-3">
-          <p className="text-sm" style={{ color: "var(--text-sub)" }}>
-            Scanne le QR affiché par l&apos;hôte :
-          </p>
-          <QRScanner onScan={handleScannedOffer} onCancel={() => setStep("choice")} />
-        </div>
-      )}
-
-      {step === "join-waiting" && invitePayload && (
-        <div className="text-center space-y-3">
-          <p className="text-sm" style={{ color: "var(--text-sub)" }}>
-            Montre ce QR à l&apos;hôte pour finaliser la connexion :
-          </p>
-          <div className="flex justify-center">
-            <QRCodeDisplay data={invitePayload} />
-          </div>
-          <p className="text-xs" style={{ color: linkFailed ? "#f87171" : "var(--text-muted)" }}>
-            {linkFailed
-              ? "La connexion n'a pas abouti. Vérifie que vous êtes sur le même réseau, puis recommence."
-              : "En attente de connexion… (l'hôte doit scanner ce QR)"}
-          </p>
-          {link && (
-            <p className="text-[10px] whitespace-pre-wrap break-all text-left" style={{ color: "var(--text-sub)" }}>
-              {link.text}
-            </p>
-          )}
-          {linkFailed && (
-            <button
-              onClick={() => {
-                setConnecting(null);
-                setInvitePayload(null);
-                clientRef.current = null;
-                setStep("choice");
-              }}
-              className="w-full py-2.5 rounded-xl text-sm font-medium"
-              style={{ border: "1px solid var(--border)", color: "var(--text-main)" }}
-            >
-              Recommencer
-            </button>
-          )}
-        </div>
-      )}
-
-      {step === "internet-lobby" && (
+      {step === "lobby" && (
         <div className="space-y-4 text-center">
           {mode === "host" ? (
             <>
@@ -612,7 +273,7 @@ export default function RoomConnect({
 
           {mode === "host" ? (
             <button
-              onClick={launchInternetGame}
+              onClick={launch}
               disabled={lobbyPlayers.length < minPlayers}
               className="w-full py-3.5 rounded-xl font-display tracking-widest text-sm disabled:opacity-40"
               style={{ background: "linear-gradient(135deg,var(--primary),var(--primary-light))", color: "white" }}
@@ -621,9 +282,7 @@ export default function RoomConnect({
             </button>
           ) : (
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {lobbyPlayers.length <= 1
-                ? "Personne d'autre dans le salon : vérifie le code. "
-                : ""}
+              {lobbyPlayers.length <= 1 ? "Personne d'autre dans le salon : vérifie le code. " : ""}
               En attente que l&apos;hôte lance la partie…
             </p>
           )}

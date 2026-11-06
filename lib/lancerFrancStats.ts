@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 import { getSessionUser } from "./session";
 
 /**
- * Stats « de tout le temps » du lancer franc.
+ * Stats « de tout le temps » du Swish 3x3 (table historique lancer_franc_stats).
  *  - Toujours sauvegardées en local (le jeu marche hors ligne, en avion).
  *  - Synchronisées avec Supabase dès qu'il y a du réseau (table lancer_franc_stats).
  *  - Le recordman = meilleur pourcentage de réussite parmi ceux qui ont tiré

@@ -45,7 +45,7 @@ lib/
   dates.ts              Dates locales "YYYY-MM-DD"
 public/sw.js            Service worker (cache, hors ligne, push)
 scripts/ + .github/     Traitement automatique des billets et cartes (GitHub Actions)
-sql/, supabase/         Scripts SQL (Victorinis, quiz)
+sql/                    Scripts SQL (Victorinis, analyse vidéo…)
 ```
 
 ## Analyse vidéo (staff du pôle masculin)
@@ -73,11 +73,11 @@ Une fois l'app ouverte au moins une fois avec du réseau :
   resservie sans réseau, ou si le réseau met plus de 6 s à répondre.
 - **Billets** : les PDF des trajets à venir sont téléchargés à l'ouverture de
   l'app et s'ouvrent sans réseau (visionneuse intégrée + partage/enregistrement).
-- **Saisies** (suivi sportif, forme, émotions, respiration, scores du quiz) :
+- **Saisies** (suivi sportif, forme, émotions, respiration) :
   enregistrées sur l'appareil puis envoyées automatiquement au retour du réseau.
   Les cartes Victorinis et badges sont attribués au moment de l'envoi.
-- **Jeux** : fonctionnaient déjà sans internet (WebRTC + QR codes) ; les
-  questions du quiz sont désormais gardées en cache.
+- **Jeux** : le Swish 3x3 en solo marche sans réseau ; les jeux à plusieurs
+  (Lucky Luke, Bomberman, Gartic Phone) passent par internet avec un code de salon.
 - Un bandeau en bas de l'écran indique l'état (hors ligne, envoi en cours, erreurs).
 
 Le service worker est enregistré avec la version du commit (`/sw.js?v=…`) :

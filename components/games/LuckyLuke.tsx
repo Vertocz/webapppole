@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RoomContext } from "./RoomConnect";
-import type { NetMessage } from "@/lib/p2pRoom";
+import type { NetMessage } from "@/lib/netTypes";
 import { LancerFrancDuel, ShotScene, isMade, type Outcome, type ShotResult } from "./LancerFranc";
 import {
   createLucky,

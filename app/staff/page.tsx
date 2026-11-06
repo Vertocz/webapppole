@@ -10,7 +10,6 @@ import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
 import Billets, { prefetchBilletsOffline } from "@/components/Billets";
-import { prefetchQuizOffline } from "@/components/games/Quiz";
 import Tournois from "@/components/Tournois";
 import GaresLogistique from "@/components/GaresLogistique";
 import BadgesTab from "@/components/BadgesTab";
@@ -70,9 +69,8 @@ export default function StaffPage() {
     setUser(u);
     setTelephone(u.numero_tel ?? "");
 
-    // Prépare le hors ligne : billets PDF à venir + questions du quiz
+    // Prépare le hors ligne : billets PDF à venir
     prefetchBilletsOffline(u.id);
-    prefetchQuizOffline();
 
     // Le staff n'a plus de badges — on passe juste badgesChecked à true
     setBadgesChecked(true);

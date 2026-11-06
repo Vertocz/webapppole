@@ -32,7 +32,7 @@ import { ShotScene } from "./lancerFranc/ShotScene";
 import { ShotFeedback } from "./lancerFranc/ShotFeedback";
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  Lancer franc — design Swish3x3.
+//  Swish 3x3 (ancien « lancer franc »).
 //  Le moteur (mesure du geste, décision du tir, scène 3D) est dans lib/lancerFranc/ ;
 //  tous les réglages d'équilibrage sont dans lib/lancerFranc/settings.ts.
 // ═════════════════════════════════════════════════════════════════════════════
