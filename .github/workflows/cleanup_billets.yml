@@ -1,7 +1,7 @@
 name: Nettoyage billets anciens
 
 on:
-  # Lancement automatique chaque lundi à 03h00 UTC
+  # Lancement automatique chaque jeudi à 16h20 UTC (souvent retardé par GitHub)
   schedule:
     - cron: "20 16 * * 4"
   # Lancement manuel depuis l'onglet Actions (avec option dry-run)

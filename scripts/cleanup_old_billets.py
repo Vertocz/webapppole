@@ -3,6 +3,8 @@ cleanup_old_billets.py
 ──────────────────────
 Nettoie les billets de train et leurs fichiers PDF dans le storage Supabase
 quand TOUS les trajets associés à un billet sont passés depuis plus d'une semaine.
+Supprime aussi les PDF du bucket qui ne sont rattachés à aucun billet depuis
+plus de 30 jours (doublons « Déjà traité », billets jamais identifiés…).
 
 RÈGLE DE CONSERVATION :
   Un billet est conservé si l'UN de ces critères est vrai :
@@ -27,7 +29,7 @@ USAGE :
 """
 
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 
@@ -39,6 +41,10 @@ BUCKET = "Billets"
 
 # Un billet est supprimé si son trajet le plus récent est passé depuis > N jours.
 RETENTION_DAYS = 7
+
+# Un PDF du bucket rattaché à aucun billet (doublon déjà traité, billet non
+# identifié, billet supprimé sans son fichier…) est supprimé après N jours.
+ORPHAN_RETENTION_DAYS = 30
 
 # DRY_RUN=true → affiche ce qui serait supprimé sans rien faire
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
@@ -159,5 +165,51 @@ def cleanup():
             print(f"  {err}")
 
 
+def list_bucket_files() -> list[dict]:
+    """Liste tous les fichiers du bucket (pagination : 100 par défaut côté API)."""
+    files, offset, page = [], 0, 1000
+    while True:
+        batch = supabase.storage.from_(BUCKET).list("", {"limit": page, "offset": offset})
+        files += batch or []
+        if not batch or len(batch) < page:
+            return files
+        offset += page
+
+
+def cleanup_orphan_files():
+    """Supprime les PDF qui ne correspondent à aucun billet depuis plus de N jours."""
+    seuil = datetime.now(timezone.utc) - timedelta(days=ORPHAN_RETENTION_DAYS)
+    mode = "🔍 DRY-RUN" if DRY_RUN else "🗑️  SUPPRESSION"
+    print(f"\n{'═' * 50}")
+    print(f"{mode} — PDF sans billet déposés avant le {seuil.date().isoformat()}\n")
+
+    res = supabase.table("billets").select("url_stockage").execute()
+    references = {b["url_stockage"] for b in (res.data or [])}
+
+    orphelins = []
+    for f in list_bucket_files():
+        name = f.get("name") or ""
+        if not name.lower().endswith(".pdf") or name in references:
+            continue
+        created = f.get("created_at")
+        if not created:
+            print(f"  ⚠️  {name} : date inconnue → conservé")
+            continue
+        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        if created_dt >= seuil:
+            print(f"  ✅ Conservé (récent, peut-être en attente de traitement) : {name}")
+            continue
+        print(f"  🗑️  À supprimer : {name} (déposé le {created_dt.date().isoformat()})")
+        orphelins.append(name)
+
+    print(f"\n  → {len(orphelins)} PDF sans billet à supprimer.")
+    if not orphelins or DRY_RUN:
+        return
+
+    supabase.storage.from_(BUCKET).remove(orphelins)
+    print(f"✅ {len(orphelins)} PDF sans billet supprimé(s).")
+
+
 if __name__ == "__main__":
     cleanup()
+    cleanup_orphan_files()
