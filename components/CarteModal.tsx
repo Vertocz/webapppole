@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   RARETE_COLOR,
   RARETE_LABEL,
@@ -32,9 +32,36 @@ export default function CarteModal({ personne, rarete: rareteInitiale, raretes, 
   const rarete = liste[index] ?? rareteInitiale;
   const [ratio, setRatio] = useState(2 / 3);
   const [touchX, setTouchX] = useState<number | null>(null);
-  const aller = (i: number) => {
-    if (i >= 0 && i < liste.length) setIndex(i);
+  // Glissement entre les couleurs : la carte sortante part d'un côté, la suivante arrive de l'autre
+  const [dragX, setDragX] = useState(0);
+  const [drag, setDrag] = useState(false);
+  const [sortie, setSortie] = useState<{ rarete: Rarete; vers: "g" | "d"; dx: number; id: number } | null>(null);
+  const [entree, setEntree] = useState<{ depuis: "g" | "d"; id: number } | null>(null);
+
+  const aller = (i: number, dx = 0) => {
+    if (i < 0 || i >= liste.length || i === index) return;
+    const versSuivante = i > index; // carte inférieure : la carte actuelle part à gauche
+    const id = Date.now();
+    setSortie({ rarete, vers: versSuivante ? "g" : "d", dx, id });
+    setEntree({ depuis: versSuivante ? "d" : "g", id });
+    setIndex(i);
+    setDragX(0);
   };
+
+  const allerRef = useRef(aller);
+  const indexRef = useRef(index);
+  useEffect(() => {
+    allerRef.current = aller;
+    indexRef.current = index;
+  });
+
+  // Précharge toutes les couleurs pour que la carte suivante apparaisse sans délai
+  useEffect(() => {
+    liste.forEach((r) => {
+      const img = new window.Image();
+      img.src = getCarteUrl(personne, r);
+    });
+  }, [personne, liste.join(",")]);
 
   const [imageChargee, setImageChargee] = useState(false);
   const [delaiPasse, setDelaiPasse] = useState(!gagnee);
@@ -63,19 +90,58 @@ export default function CarteModal({ personne, rarete: rareteInitiale, raretes, 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
-      if (e.key === "ArrowRight") setIndex((i) => Math.min(i + 1, liste.length - 1));
-      if (e.key === "ArrowLeft") setIndex((i) => Math.max(i - 1, 0));
+      if (e.key === "ArrowRight") allerRef.current(indexRef.current + 1);
+      if (e.key === "ArrowLeft") allerRef.current(indexRef.current - 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, liste.length]);
+  }, [onClose]);
 
-  const glow =
-    rarete === "or"
+  const glowDe = (r: Rarete) =>
+    r === "or"
       ? "0 0 60px 12px rgba(242,185,15,0.55), 0 0 120px 30px rgba(242,185,15,0.25)"
-      : rarete === "argent"
+      : r === "argent"
       ? "0 0 40px 6px rgba(201,209,222,0.4)"
       : "0 0 40px 6px rgba(59,123,255,0.4)";
+
+  /** Recto d'une carte (image, halo, reflet) */
+  const recto = (r: Rarete, visible: boolean) => (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        backfaceVisibility: "hidden",
+        borderRadius: 18,
+        overflow: "hidden",
+        boxShadow: visible ? glowDe(r) : "none",
+        animation: visible && r !== "bleu" ? "vic-pulse 2.2s ease-in-out infinite" : undefined,
+      }}
+    >
+      <img
+        src={getCarteUrl(personne, r)}
+        alt={`Carte ${p?.prenom ?? ""} ${p?.nom ?? ""}`}
+        className="w-full h-full object-contain"
+        draggable={false}
+      />
+      {r !== "bleu" && visible && (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              width: "40%",
+              background: `linear-gradient(90deg, transparent, ${
+                r === "or" ? "rgba(255,240,170,0.55)" : "rgba(255,255,255,0.4)"
+              }, transparent)`,
+              animation: "vic-shine 2.8s ease-in-out infinite",
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+
 
   const titre = gagnee
     ? "Tu viens de gagner une carte"
@@ -83,7 +149,7 @@ export default function CarteModal({ personne, rarete: rareteInitiale, raretes, 
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex flex-col items-center justify-center px-4"
+      className="fixed inset-0 z-[120] flex flex-col items-center justify-center px-4 overflow-hidden"
       style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(6px)" }}
       onClick={onClose}
     >
@@ -91,6 +157,10 @@ export default function CarteModal({ personne, rarete: rareteInitiale, raretes, 
         @keyframes vic-fadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
         @keyframes vic-pulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.12); } }
         @keyframes vic-shine { 0% { transform: translateX(-130%) skewX(-20deg); } 55%,100% { transform: translateX(230%) skewX(-20deg); } }
+        @keyframes vic-out-g { from { transform: translateX(var(--dx)) rotate(var(--rot)); opacity: 1; } to { transform: translateX(-140%) rotate(-14deg); opacity: 0; } }
+        @keyframes vic-out-d { from { transform: translateX(var(--dx)) rotate(var(--rot)); opacity: 1; } to { transform: translateX(140%) rotate(14deg); opacity: 0; } }
+        @keyframes vic-in-d { from { transform: translateX(140%) rotate(14deg); opacity: 0; } to { transform: none; opacity: 1; } }
+        @keyframes vic-in-g { from { transform: translateX(-140%) rotate(-14deg); opacity: 0; } to { transform: none; opacity: 1; } }
         @keyframes vic-float { 0% { transform: translateY(0) scale(0.6); opacity: 0; } 15% { opacity: 1; } 100% { transform: translateY(-110vh) scale(1.1); opacity: 0; } }
       `}</style>
 
@@ -179,7 +249,11 @@ export default function CarteModal({ personne, rarete: rareteInitiale, raretes, 
           )}
         </p>
         {!gagnee && (
-          <p className="text-xs uppercase tracking-widest mt-1" style={{ color }}>
+          <p
+            key={rarete}
+            className="text-xs uppercase tracking-widest mt-1"
+            style={{ color, animation: "vic-fadein 0.35s ease both" }}
+          >
             Carte {RARETE_LABEL[rarete]}
           </p>
         )}
@@ -188,24 +262,68 @@ export default function CarteModal({ personne, rarete: rareteInitiale, raretes, 
       {/* Carte qui se retourne */}
       <div
         onClick={(e) => e.stopPropagation()}
-        onTouchStart={(e) => setTouchX(e.touches[0].clientX)}
-        onTouchEnd={(e) => {
+        onTouchStart={(e) => {
+          if (liste.length < 2) return;
+          setTouchX(e.touches[0].clientX);
+          setDrag(true);
+        }}
+        onTouchMove={(e) => {
           if (touchX === null) return;
-          const dx = e.changedTouches[0].clientX - touchX;
+          const dx = e.touches[0].clientX - touchX;
+          // Au bord (pas de carte de ce côté), la carte résiste
+          const bord = (dx > 0 && index === 0) || (dx < 0 && index === liste.length - 1);
+          setDragX(bord ? dx / 4 : dx);
+        }}
+        onTouchEnd={() => {
+          if (touchX === null) return;
           setTouchX(null);
-          if (Math.abs(dx) < 40) return;
-          aller(dx < 0 ? index + 1 : index - 1); // swipe gauche → carte inférieure
+          setDrag(false);
+          if (Math.abs(dragX) < 60) {
+            setDragX(0); // revient au centre
+            return;
+          }
+          // glisser vers la gauche → carte inférieure
+          const cible = dragX < 0 ? index + 1 : index - 1;
+          if (cible < 0 || cible >= liste.length) {
+            setDragX(0);
+            return;
+          }
+          aller(cible, dragX);
         }}
         style={{
           perspective: 1200,
+          position: "relative",
           width: `min(80vw, 340px, calc(62dvh * ${ratio}))`,
           aspectRatio: `${ratio}`,
           touchAction: "pan-y",
         }}
       >
+        {sortie && (
+          <div
+            key={sortie.id}
+            onAnimationEnd={(e) => {
+              if (e.target === e.currentTarget) setSortie(null);
+            }}
+            style={
+              {
+                position: "absolute",
+                inset: 0,
+                zIndex: 0,
+                pointerEvents: "none",
+                "--dx": `${sortie.dx}px`,
+                "--rot": `${sortie.dx / 25}deg`,
+                animation: `vic-out-${sortie.vers} 0.4s cubic-bezier(.4,0,.6,1) both`,
+              } as React.CSSProperties
+            }
+          >
+            {recto(sortie.rarete, true)}
+          </div>
+        )}
+
         <div
           style={{
             position: "relative",
+            zIndex: 1,
             width: "100%",
             height: "100%",
             transformStyle: "preserve-3d",
@@ -213,35 +331,19 @@ export default function CarteModal({ personne, rarete: rareteInitiale, raretes, 
             transform: revele ? "rotateY(0deg)" : "rotateY(180deg)",
           }}
         >
-          {/* Face avant */}
+          {/* Face avant : suit le doigt, puis arrive en glissant quand on change de couleur */}
           <div
+            key={entree?.id ?? 0}
             style={{
               position: "absolute",
               inset: 0,
-              backfaceVisibility: "hidden",
-              borderRadius: 18,
-              overflow: "hidden",
-              boxShadow: revele ? glow : "none",
-              animation: revele && rarete !== "bleu" ? "vic-pulse 2.2s ease-in-out infinite" : undefined,
+              transformStyle: "preserve-3d",
+              transform: dragX ? `translateX(${dragX}px) rotate(${dragX / 25}deg)` : undefined,
+              transition: drag ? "none" : "transform 0.25s ease",
+              animation: entree ? `vic-in-${entree.depuis} 0.4s cubic-bezier(.2,.8,.2,1) both` : undefined,
             }}
           >
-            <img src={url} alt={`Carte ${p?.prenom ?? ""} ${p?.nom ?? ""}`} className="w-full h-full object-contain" />
-            {rarete !== "bleu" && revele && (
-              <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    bottom: 0,
-                    width: "40%",
-                    background: `linear-gradient(90deg, transparent, ${
-                      rarete === "or" ? "rgba(255,240,170,0.55)" : "rgba(255,255,255,0.4)"
-                    }, transparent)`,
-                    animation: "vic-shine 2.8s ease-in-out infinite",
-                  }}
-                />
-              </div>
-            )}
+            {recto(rarete, revele)}
           </div>
 
           {/* Dos de carte */}
