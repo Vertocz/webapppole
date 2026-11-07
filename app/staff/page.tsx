@@ -9,7 +9,7 @@ import ThemeProvider from "@/components/ThemeProvider";
 import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
 import PreparationMentale from "@/components/PreparationMentale";
-import Billets, { prefetchBilletsOffline } from "@/components/Billets";
+import Billets, { aDesBilletsActuels, aDesTrajetsAVenir, prefetchBilletsOffline } from "@/components/Billets";
 import Tournois from "@/components/Tournois";
 import GaresLogistique from "@/components/GaresLogistique";
 import BadgesTab from "@/components/BadgesTab";
@@ -39,6 +39,7 @@ export default function StaffPage() {
   const [view, setView] = useState<View>("joueurs");
   const [hasBillets, setHasBillets] = useState(false);
   const [hasCarte, setHasCarte] = useState(false);
+  const [hasTrajetsAVenir, setHasTrajetsAVenir] = useState(false);
   const [newBadgeIds, setNewBadgeIds] = useState<string[]>([]);
   const [badgesChecked, setBadgesChecked] = useState(false);
   const [telephone, setTelephone] = useState("");
@@ -84,16 +85,14 @@ export default function StaffPage() {
       window.history.replaceState({}, "", window.location.pathname);
     }
 
-    supabase
-      .from("billets")
-      .select("id")
-      .eq("joueuse_id", u.id)
-      .limit(1)
-      .then(({ data }) => {
-        const has = (data ?? []).length > 0;
-        setHasBillets(has);
-        if (has) setView("billets");
-      });
+    // Billets / Ma carte : seulement s'il reste un déplacement d'actualité
+    aDesBilletsActuels(u.id).then((has) => {
+      setHasBillets(has);
+      if (has) setView("billets");
+    });
+
+    // Gares : seulement s'il reste des trajets à venir dans l'app
+    aDesTrajetsAVenir().then(setHasTrajetsAVenir);
 
     supabase
       .from("cartes")
@@ -151,14 +150,14 @@ export default function StaffPage() {
   // Navigation personnelle du staff : ce qu'il consulte/fait pour lui-même.
   const viewTabs: { id: View; label: string; icon: string }[] = [
     ...(hasBillets ? [{ id: "billets" as View, label: "Mes billets", icon: "🎫" }] : []),
-    ...(hasCarte ? [{ id: "carte" as View, label: "Ma carte", icon: "💳" }] : []),
+    ...(hasCarte && hasBillets ? [{ id: "carte" as View, label: "Ma carte", icon: "💳" }] : []),
     { id: "joueurs", label: "Suivi joueurs", icon: "📊" },
     // Analyse vidéo des matchs : réservée au staff du pôle masculin pour l'instant
     ...(user.masculin ? [{ id: "analyse" as View, label: "Analyse vidéo", icon: "🎥" }] : []),
     ...(user.masculin ? [{ id: "victorinis" as View, label: "Victorinis", icon: "🃏" }] : []),
     { id: "tournois", label: "Tournois", icon: "🏆" },
     { id: "jeux", label: "Jeux", icon: "🎮" },
-    ...(isLogisticien ? [{ id: "gares" as View, label: "Gares", icon: "🚉" }] : []),
+    ...(isLogisticien && hasTrajetsAVenir ? [{ id: "gares" as View, label: "Gares", icon: "🚉" }] : []),
   ];
 
   return (

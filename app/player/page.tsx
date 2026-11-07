@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Layout from "@/components/Layout";
 import ThemeProvider from "@/components/ThemeProvider";
-import Billets, { prefetchBilletsOffline } from "@/components/Billets";
+import Billets, { aDesBilletsActuels, prefetchBilletsOffline } from "@/components/Billets";
 import CarteAvantage from "@/components/CarteAvantage";
 import SuiviSportif from "@/components/SuiviSportif";
 import SuiviForme from "@/components/SuiviForme";
@@ -77,12 +77,8 @@ export default function JoueuseePage() {
         setUser((u) => (u ? { ...u, ...data } : u));
       });
 
-    supabase
-      .from("billets")
-      .select("id")
-      .eq("joueuse_id", parsed.id)
-      .limit(1)
-      .then(({ data }) => setHasBillets((data ?? []).length > 0));
+    // Billets / Ma carte : seulement s'il reste un déplacement d'actualité
+    aDesBilletsActuels(parsed.id).then(setHasBillets);
     supabase
       .from("questionnaire_destinataires")
       .select("id")
@@ -169,7 +165,7 @@ export default function JoueuseePage() {
     ...(user.victorinis ? [TAB_VICTORINIS] : []),
     TAB_TOURNOIS,
     ...(user.acces_jeux ? [TAB_JEUX] : []),
-    ...(hasCarte ? [TAB_CARTE] : []),
+    ...(hasCarte && hasBillets ? [TAB_CARTE] : []),
     ...(hasBadges ? [TAB_BADGES] : []),
     ...(hasQuestionnaire ? [TAB_QUESTIONNAIRE] : []),
   ];

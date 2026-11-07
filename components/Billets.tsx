@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import Card from "./Card";
 import { getCachedBilletPdf, isOnline, syncBilletsPdf } from "@/lib/offline";
-import { todayISO } from "@/lib/dates";
+import { addDaysISO, todayISO } from "@/lib/dates";
 
 const STORAGE_BASE =
   "https://fxvotvtapcwzvjhfreqv.supabase.co/storage/v1/object/public/Billets/";
@@ -62,6 +62,35 @@ function pdfUrlsToKeep(billets: BilletAvecTrajets[]): string[] {
     .filter((b) => b.trajets.length === 0 || b.trajets.some((t) => t.date_depart >= today))
     .map((b) => STORAGE_BASE + b.url_stockage);
   return [...new Set(urls)];
+}
+
+/**
+ * La personne a-t-elle un billet « d'actualité » ? = un trajet aujourd'hui ou à venir,
+ * ou un billet récent dont les trajets n'ont pas (encore) été détectés.
+ * Sert à masquer Billets / Ma carte quand il n'y a plus de déplacement en vue.
+ */
+export async function aDesBilletsActuels(userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("billets")
+    .select("created_at, trajets(date_depart)")
+    .eq("joueuse_id", userId);
+  const today = todayISO();
+  const ilYa30j = addDaysISO(today, -30);
+  return (data ?? []).some((b: { created_at: string | null; trajets: { date_depart: string }[] | null }) => {
+    const trajets = b.trajets ?? [];
+    if (trajets.length === 0) return (b.created_at ?? "").slice(0, 10) >= ilYa30j;
+    return trajets.some((t) => t.date_depart >= today);
+  });
+}
+
+/** Y a-t-il au moins un trajet aujourd'hui ou à venir dans l'app (toutes personnes) ? */
+export async function aDesTrajetsAVenir(): Promise<boolean> {
+  const { data } = await supabase
+    .from("trajets")
+    .select("id")
+    .gte("date_depart", todayISO())
+    .limit(1);
+  return (data ?? []).length > 0;
 }
 
 /** À appeler à l'ouverture de l'app : les billets seront consultables sans réseau. */
