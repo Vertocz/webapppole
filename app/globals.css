@@ -19,8 +19,8 @@
   --primary:      #1B3A8C;   /* bleu logo */
   --primary-light:#2952CC;
   --text-main:    #E8EEF8;
-  --text-sub:     #6B82B0;
-  --text-muted:   #3D5080;
+  --text-sub:     #8A9DC8;
+  --text-muted:   #6478A8;
   --border:       rgba(43, 80, 160, 0.2);
   --border-card:  rgba(43, 80, 160, 0.15);
   --tab-active:   #E8192C;
@@ -39,8 +39,8 @@
   --primary:      #1E3A6E;   /* bleu ardoise */
   --primary-light:#2A5299;
   --text-main:    #D8E2F0;
-  --text-sub:     #607898;
-  --text-muted:   #3A506E;
+  --text-sub:     #8CA0C0;
+  --text-muted:   #647C9E;
   --border:       rgba(40, 70, 130, 0.2);
   --border-card:  rgba(40, 70, 130, 0.15);
   --tab-active:   #C49A28;

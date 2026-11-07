@@ -311,13 +311,14 @@ export default function StaffPage() {
                         <button
                           key={j.id}
                           onClick={() => handleSelectJoueur(j)}
-                          className="px-3 py-2 rounded-xl text-sm font-medium transition-all"
+                          className="px-3 py-2 rounded-xl text-sm transition-all"
                           style={{
-                            background: isSelected ? "color-mix(in srgb, var(--accent) 15%, var(--bg-card))" : "var(--bg-input)",
+                            background: isSelected ? "color-mix(in srgb, var(--accent) 22%, var(--bg-card))" : "var(--bg-card2)",
                             border: isSelected
-                              ? "1px solid color-mix(in srgb, var(--accent) 40%, transparent)"
-                              : "1px solid var(--border)",
-                            color: isSelected ? "var(--text-main)" : "var(--text-muted)",
+                              ? "1px solid color-mix(in srgb, var(--accent) 75%, transparent)"
+                              : "1px solid rgba(120, 150, 210, 0.25)",
+                            color: "var(--text-main)",
+                            fontWeight: isSelected ? 600 : 500,
                           }}
                         >
                           {j.prenom} {j.nom}
