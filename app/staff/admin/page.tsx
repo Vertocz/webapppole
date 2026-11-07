@@ -12,6 +12,7 @@ import GamesAccessPanel from "@/components/GamesAccessPanel";
 import CartesPanel from "@/components/CartesPanel";
 import type { Staff, Joueuse } from "@/types";
 import QuestionnaireAdmin from "@/components/QuestionnaireAdmin";
+import SuppressionBillets from "@/components/SuppressionBillets";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {tab === "billets"       && <BilletsPanel />}
+          {tab === "billets"       && <BilletsPanel pole={pole} />}
           {tab === "cartes"        && <CartesPanel />}
           {tab === "joueurs"       && <JoueursPanel user={user} />}
           {tab === "jeux"          && <GamesAccessPanel />}
@@ -144,7 +145,7 @@ export default function AdminPage() {
 const GITHUB_TOKEN = process.env.NEXT_PUBLIC_GITHUB_TOKEN ?? "";
 const GITHUB_REPO  = process.env.NEXT_PUBLIC_GITHUB_REPO ?? "";  // ex: "Vertocz/webapppole"
 
-function BilletsPanel() {
+function BilletsPanel({ pole }: { pole: "masculin" | "feminin" | "both" }) {
   const [files,         setFiles]         = useState<UploadedFile[]>([]);
   const [dragging,      setDragging]      = useState(false);
   const [processing,    setProcessing]    = useState(false);
@@ -338,6 +339,9 @@ function BilletsPanel() {
           </div>
         </div>
       )}
+
+      {/* Suppression de billets */}
+      <SuppressionBillets pole={pole} />
     </div>
   );
 }
