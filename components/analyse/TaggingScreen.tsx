@@ -431,7 +431,7 @@ export default function TaggingScreen({
   };
 
   /** Choix fait dans le menu ouvert par le clic sur la vidéo. */
-  const choisirAction = useCallback((kind: "tir" | "lf" | "rebond" | "ballon_gagne" | "ballon_perdu" | "repere" | "reussi" | "rate") => {
+  const choisirAction = useCallback((kind: "tir" | "lf" | "reb_off" | "reb_def" | "ballon_gagne" | "ballon_perdu" | "repere" | "reussi" | "rate") => {
     const m = modalRef.current;
     if (m?.kind !== "menu") return;
     if (kind === "reussi" || kind === "rate") {
@@ -447,7 +447,10 @@ export default function TaggingScreen({
         passerA({ kind: "tir", t: m.t, x: null, y: null, points: null, zone: null });
       }
     } else if (kind === "repere") passerA({ kind: "repere", t: m.t, titre: "" });
-    else passerA({ kind, t: m.t });
+    else if (kind === "reb_off" || kind === "reb_def") {
+      passerA({ kind: "rebond", t: m.t });
+      setRebondForce(kind === "reb_off" ? "off" : "def");
+    } else passerA({ kind, t: m.t });
   }, [passerA, fermer, trancher, enAttente]);
 
   // ─── Lignes du terrain et repères sur la vidéo ───────────────────────────
@@ -550,10 +553,10 @@ export default function TaggingScreen({
       if (!videoUrl) return;
       const t = videoRef.current?.currentTime ?? 0;
       // Empêche la lettre du raccourci d'arriver dans le champ qui s'ouvre (titre du repère)
-      if (["t", "l", "b", "g", "p", "n", "r", "m"].includes(k)) e.preventDefault();
+      if (["t", "l", "o", "d", "g", "p", "n", "r", "m"].includes(k)) e.preventDefault();
       if (k === "t") ouvrirTir(null);
       else if (k === "l") ouvrir({ kind: "lf", t });
-      else if (k === "b") ouvrir({ kind: "rebond", t });
+      else if (k === "o" || k === "d") { ouvrir({ kind: "rebond", t }); setRebondForce(k === "o" ? "off" : "def"); }
       else if (k === "g") ouvrir({ kind: "ballon_gagne", t });
       else if (k === "p") ouvrir({ kind: "ballon_perdu", t });
       else if (k === "n") ouvrir({ kind: "repere", t, titre: "" });
@@ -574,10 +577,11 @@ export default function TaggingScreen({
     ...(opts.adversaire ? [{ id: "adversaire", label: match.adversaire || "Adversaire", initiales: "ADV", adversaire: true, info: opts.info?.("adversaire") }] : []),
   ];
 
-  const boutonsActions: { kind: "tir" | ModalState["kind"]; label: string; touche: string; couleur: string }[] = [
+  const boutonsActions: { kind: "tir" | "reb_off" | "reb_def" | ModalState["kind"]; label: string; touche: string; couleur: string }[] = [
     { kind: "tir", label: "Tir", touche: "T", couleur: "var(--primary-light)" },
     { kind: "lf", label: "Lancer franc", touche: "L", couleur: "var(--primary-light)" },
-    { kind: "rebond", label: "Rebond", touche: "B", couleur: "#C49A28" },
+    { kind: "reb_off", label: "Reb. offensif", touche: "O", couleur: "#C49A28" },
+    { kind: "reb_def", label: "Reb. défensif", touche: "D", couleur: "#C49A28" },
     { kind: "ballon_gagne", label: "Ballon gagné", touche: "G", couleur: "#22c55e" },
     { kind: "ballon_perdu", label: "Ballon perdu", touche: "P", couleur: "#ef4444" },
     { kind: "repere", label: "Repère (titre libre)", touche: "N", couleur: "var(--text-sub)" },
@@ -587,6 +591,7 @@ export default function TaggingScreen({
     if (!videoUrl) { setToast({ texte: "Choisis d'abord la vidéo du match" }); return; }
     if (kind === "tir") ouvrirTir(null);
     else if (kind === "repere") ouvrir({ kind, t: tempsCourant(), titre: "" });
+    else if (kind === "reb_off" || kind === "reb_def") { ouvrir({ kind: "rebond", t: tempsCourant() }); setRebondForce(kind === "reb_off" ? "off" : "def"); }
     else ouvrir({ kind, t: tempsCourant() } as ModalState);
   };
 
@@ -822,7 +827,7 @@ export default function TaggingScreen({
                   <button
                     key={b.kind}
                     onClick={() => clicBouton(b.kind)}
-                    className={`hover-lift flex items-center justify-between gap-2 px-3 py-3 rounded-xl text-sm font-semibold text-left ${b.kind === "tir" || b.kind === "repere" ? "col-span-2" : ""}`}
+                    className={`hover-lift flex items-center justify-between gap-2 px-3 py-3 rounded-xl text-sm font-semibold text-left ${b.kind === "repere" ? "col-span-2" : ""}`}
                     style={{ background: `color-mix(in srgb, ${b.couleur} 14%, var(--bg-card2))`, border: `1px solid color-mix(in srgb, ${b.couleur} 40%, transparent)`, color: "var(--text-main)" }}
                   >
                     <span>{b.label}</span>
@@ -1009,8 +1014,8 @@ export default function TaggingScreen({
         const libelle = (t: "off" | "def" | null) => (t === "off" ? "Rebond offensif" : t === "def" ? "Rebond défensif" : undefined);
         return (
           <Modale
-            titre="Rebond"
-            sousTitre={peutDeduire ? "Offensif ou défensif déduit du dernier tir raté" : "Pas de tir raté juste avant : précise le type"}
+            titre={rebondForce === "off" ? "Rebond offensif" : rebondForce === "def" ? "Rebond défensif" : "Rebond"}
+            sousTitre={rebondForce ? "Qui prend le rebond ?" : peutDeduire ? "Offensif ou défensif déduit du dernier tir raté" : "Pas de tir raté juste avant : précise le type"}
             onAnnuler={() => fermer(true)}
           >
             <div className="flex items-center gap-2 mb-4">
@@ -1062,13 +1067,14 @@ export default function TaggingScreen({
   );
 }
 
-const ACTIONS_MENU: { kind: "tir" | "lf" | "rebond" | "ballon_gagne" | "ballon_perdu" | "repere"; label: string; touche: string; couleur: string }[] = [
+const ACTIONS_MENU: { kind: "tir" | "lf" | "reb_off" | "reb_def" | "ballon_gagne" | "ballon_perdu" | "repere"; label: string; touche: string; couleur: string }[] = [
   { kind: "tir", label: "Tir", touche: "T", couleur: "var(--primary-light)" },
   { kind: "lf", label: "Lancer franc", touche: "L", couleur: "var(--primary-light)" },
-  { kind: "rebond", label: "Rebond", touche: "B", couleur: "#C49A28" },
-  { kind: "repere", label: "Repère", touche: "N", couleur: "var(--text-sub)" },
+  { kind: "reb_off", label: "Reb. offensif", touche: "O", couleur: "#C49A28" },
+  { kind: "reb_def", label: "Reb. défensif", touche: "D", couleur: "#C49A28" },
   { kind: "ballon_gagne", label: "Ballon gagné", touche: "G", couleur: "#22c55e" },
   { kind: "ballon_perdu", label: "Ballon perdu", touche: "P", couleur: "#ef4444" },
+  { kind: "repere", label: "Repère", touche: "N", couleur: "var(--text-sub)" },
 ];
 
 /** Menu ouvert par un clic sur la vidéo : que s'est-il passé ? */
@@ -1114,7 +1120,7 @@ function MenuActions({
           <button
             key={a.kind}
             onClick={() => onChoisir(a.kind)}
-            className="hover-lift flex items-center justify-between gap-2 px-4 py-4 rounded-xl text-base font-semibold text-left"
+            className={`hover-lift flex items-center justify-between gap-2 px-4 py-4 rounded-xl text-base font-semibold text-left ${a.kind === "repere" ? "col-span-2 mt-2" : ""}`}
             style={{ background: `color-mix(in srgb, ${a.couleur} 16%, var(--bg-card2))`, border: `1px solid color-mix(in srgb, ${a.couleur} 45%, transparent)`, color: "var(--text-main)" }}
           >
             <span>{a.label}</span>

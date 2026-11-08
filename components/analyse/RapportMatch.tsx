@@ -9,7 +9,7 @@ import Card from "@/components/Card";
 import {
   type Action, type Match, type StatsBloc, calculerStats, estTir, fmtLigne, fmtPct, fmtTemps, score,
 } from "@/lib/analyse";
-import CarteTirs, { COULEURS_PDF, fmtZoneLigne, fmtZonePct, statsZones } from "./CarteTirs";
+import CarteTirs, { COULEURS_PDF, SchemaZones, fmtZoneLigne, fmtZonePct, statsZones } from "./CarteTirs";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-sub)",
@@ -315,8 +315,8 @@ function PageCoach({
   const td: React.CSSProperties = { padding: "5px 6px", borderTop: "1px solid #e5e7eb", fontSize: 11.5 };
   const tirsNous = actions.filter((a) => estTir(a) && a.equipe === "nous");
   const zones = statsZones(tirsNous);
-  const reperes = actions.filter((a) => a.type === "repere");
-  const MAX_REPERES = 12;
+  // Tirs adverses placés sur le terrain (match suivi « comme pour nous »)
+  const tirsAdvPos = actions.filter((a) => a.type === "tir" && a.equipe === "adversaire" && a.x !== null && a.y !== null);
 
   return (
     <div data-print-page style={{ ...PDF_PAGE, padding: "36px 46px 28px", gap: 16 }}>
@@ -362,21 +362,31 @@ function PageCoach({
         </div>
       </div>
 
-      <div>
-        <p style={lab}>Réussite par zone · France (hors lancers francs)</p>
-        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-          <thead>
-            <tr>{zones.map((z) => <th key={z.id} style={{ ...td, borderTop: "none", fontSize: 10.5, color: "#6b7280", textAlign: "center", fontWeight: 600 }}>{z.label}</th>)}</tr>
-          </thead>
-          <tbody>
-            <tr>{zones.map((z) => (
-              <td key={z.id} style={{ ...td, textAlign: "center" }}>
-                <strong style={{ fontWeight: 600 }}>{fmtZoneLigne(z.l)}</strong>
-                <span style={{ color: z.l.tentes ? "#9A7818" : "#9ca3af", marginLeft: 6 }}>{fmtZonePct(z.l)}</span>
-              </td>
-            ))}</tr>
-          </tbody>
-        </table>
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+        <div style={{ width: 340 }}>
+          <p style={lab}>Réussite par zone · France</p>
+          <SchemaZones tirs={tirsNous} />
+          <p style={{ fontSize: 9.5, color: "#6b7280", margin: "5px 0 0" }}>Réussis/tentés par zone, hors lancers francs. Plus la zone est foncée, plus elle est réussie.</p>
+        </div>
+        {tirsAdvPos.length > 0 ? (
+          <div style={{ flex: 1 }}>
+            <p style={lab}>Tirs de {match.adversaire || "l'adversaire"}</p>
+            <CarteTirs tirs={tirsAdvPos} couleurs={COULEURS_PDF} />
+            <p style={{ fontSize: 9.5, color: "#6b7280", margin: "5px 0 0", textAlign: "center" }}>● rentré · ✕ raté</p>
+          </div>
+        ) : (
+          <table style={{ flex: 1, borderCollapse: "collapse", marginTop: 18 }}>
+            <tbody>
+              {zones.map((z) => (
+                <tr key={z.id}>
+                  <td style={{ ...td, color: "#4b5563" }}>{z.label}</td>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{fmtZoneLigne(z.l)}</td>
+                  <td style={{ ...td, textAlign: "right", color: z.l.tentes ? "#9A7818" : "#9ca3af", width: 52 }}>{fmtZonePct(z.l)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div>
@@ -399,21 +409,6 @@ function PageCoach({
         </table>
         <p style={{ fontSize: 9.5, color: "#6b7280", margin: "5px 0 0" }}>Tirs en réussis/tentés · Reb O / Reb D : rebonds offensifs / défensifs · BG : ballons gagnés · BP : ballons perdus · Détail de chaque joueur dans les pages suivantes</p>
       </div>
-
-      {reperes.length > 0 && (
-        <div>
-          <p style={lab}>Repères</p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 24, rowGap: 3 }}>
-            {reperes.slice(0, MAX_REPERES).map((a) => (
-              <p key={a.id} style={{ fontSize: 11, margin: 0, display: "flex", gap: 10, minWidth: 0 }}>
-                <span style={{ width: 40, flexShrink: 0, color: "#9A7818", fontVariantNumeric: "tabular-nums" }}>{fmtTemps(a.t - (match.video_debut ?? 0))}</span>
-                <span style={{ color: a.titre ? "#111827" : "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.titre || "Sans titre"}</span>
-              </p>
-            ))}
-          </div>
-          {reperes.length > MAX_REPERES && <p style={{ fontSize: 10, color: "#6b7280", margin: "3px 0 0" }}>… et {reperes.length - MAX_REPERES} autres repères dans l&apos;application</p>}
-        </div>
-      )}
 
       <p style={{ marginTop: "auto", fontSize: 9, color: "#9ca3af" }}>
         Stats saisies par le staff à partir de la vidéo. Généré le {new Date().toLocaleDateString("fr-FR")}.
@@ -498,10 +493,6 @@ function PageJoueur({
           <p style={{ margin: "4px 0 0", fontSize: 18 }}>
             Score : <strong>France {sc.nous}</strong>{avecAdv ? <> · {match.adversaire || "Adversaire"} {sc.adversaire}</> : null}
           </p>
-        </div>
-        <div style={{ textAlign: "center", background: "#FBF5E6", border: "3px solid #C49A28", borderRadius: 16, padding: "10px 22px", flexShrink: 0 }}>
-          <p style={{ ...PDF_TITRE, fontSize: 84, lineHeight: 0.9, margin: 0, color: "#9A7818" }}>{s.points}</p>
-          <p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700 }}>point{s.points > 1 ? "s" : ""}</p>
         </div>
       </div>
 
