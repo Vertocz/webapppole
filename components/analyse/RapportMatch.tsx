@@ -98,10 +98,21 @@ export default function RapportMatch({
       const pages = Array.from(printRef.current?.querySelectorAll<HTMLDivElement>("[data-print-page]") ?? []);
       if (!pages.length) throw new Error("page introuvable");
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      for (let i = 0; i < pages.length; i++) {
-        const canvas = await html2canvas(pages[i], { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false });
-        if (i > 0) doc.addPage();
-        doc.addImage(canvas.toDataURL("image/jpeg", 0.93), "JPEG", 0, 0, 210, 297);
+      // html2canvas mesure la hauteur des polices avec une petite image cachée
+      // ajoutée au <body>. Tailwind affiche toutes les images en bloc : l'image
+      // tombe sous la ligne et tout le texte du PDF est dessiné trop bas, d'autant
+      // plus que le texte est gros. On remet cette image en ligne le temps de l'export.
+      const correctif = document.createElement("style");
+      correctif.textContent = 'body > div[style*="visibility: hidden"] > img { display: inline !important; }';
+      document.head.appendChild(correctif);
+      try {
+        for (let i = 0; i < pages.length; i++) {
+          const canvas = await html2canvas(pages[i], { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false });
+          if (i > 0) doc.addPage();
+          doc.addImage(canvas.toDataURL("image/jpeg", 0.93), "JPEG", 0, 0, 210, 297);
+        }
+      } finally {
+        correctif.remove();
       }
       const adv = (match.adversaire || "match").toLowerCase().replace(/[^a-z0-9]+/g, "-");
       doc.save(`stats_${match.date_match}_${adv}.pdf`);
@@ -322,8 +333,7 @@ function PageCoach({
     <div data-print-page style={{ ...PDF_PAGE, padding: "36px 46px 28px", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "3px solid #1E3A6E", paddingBottom: 10 }}>
         <div>
-          <p style={{ ...lab, margin: 0 }}>Pôle France · Para Basketball Adapté · Analyse vidéo · Page coach</p>
-          <p style={{ ...PDF_TITRE, fontSize: 34, margin: "3px 0 0", lineHeight: 1 }}>{titreMatch(match)}</p>
+          <p style={{ ...PDF_TITRE, fontSize: 34, margin: 0, lineHeight: 1 }}>{titreMatch(match)}</p>
           <p style={{ fontSize: 12, color: "#4b5563", margin: "3px 0 0" }}>{dateMatch(match)}{match.competition ? ` · ${match.competition}` : ""}</p>
         </div>
         <p style={{ ...PDF_TITRE, fontSize: 52, margin: 0, lineHeight: 1 }}>
@@ -410,9 +420,6 @@ function PageCoach({
         <p style={{ fontSize: 9.5, color: "#6b7280", margin: "5px 0 0" }}>Tirs en réussis/tentés · Reb O / Reb D : rebonds offensifs / défensifs · BG : ballons gagnés · BP : ballons perdus · Détail de chaque joueur dans les pages suivantes</p>
       </div>
 
-      <p style={{ marginTop: "auto", fontSize: 9, color: "#9ca3af" }}>
-        Stats saisies par le staff à partir de la vidéo. Généré le {new Date().toLocaleDateString("fr-FR")}.
-      </p>
     </div>
   );
 }
@@ -424,7 +431,7 @@ const ROUGE = "#dc2626";
 function Pastilles({ l }: { l: { reussis: number; tentes: number } }) {
   if (l.tentes > 24) return null; // trop nombreux pour être comptés d'un coup d'œil : le nombre suffit
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 10 }}>
       {Array.from({ length: l.tentes }, (_, i) => (
         <span
           key={i}
@@ -448,9 +455,11 @@ function PageJoueur({
   sc: { nous: number; adversaire: number };
   avecAdv: boolean;
 }) {
-  const bloc: React.CSSProperties = { border: "2px solid #e5e7eb", borderRadius: 14, padding: "14px 18px" };
-  const titreBloc: React.CSSProperties = { fontSize: 19, fontWeight: 700, margin: 0 };
-  const grosChiffre: React.CSSProperties = { ...PDF_TITRE, fontSize: 46, lineHeight: 1 };
+  // Chiffres en DM Sans gras (pas en Bebas Neue) : plus lisibles, et ils restent
+  // alignés avec le texte une fois la page transformée en image pour le PDF.
+  const bloc: React.CSSProperties = { border: "2px solid #e5e7eb", borderRadius: 14, padding: "16px 20px" };
+  const titreBloc: React.CSSProperties = { fontSize: 19, fontWeight: 700, lineHeight: "24px", margin: 0 };
+  const chiffre = (couleur: string, taille = 40): React.CSSProperties => ({ fontSize: taille, fontWeight: 700, color: couleur, fontVariantNumeric: "tabular-nums" });
   const date = new Date(match.date_match + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
 
   const tir = (label: string, l: { reussis: number; tentes: number }) => (
@@ -458,26 +467,27 @@ function PageJoueur({
       <p style={titreBloc}>{label}</p>
       {l.tentes ? (
         <>
-          <p style={{ margin: "6px 0 0", fontSize: 20, display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ ...grosChiffre, color: VERT }}>{l.reussis}</span>
-            <span>marqué{l.reussis > 1 ? "s" : ""} sur</span>
-            <span style={{ ...grosChiffre, color: "#111827" }}>{l.tentes}</span>
+          {/* Une seule ligne de texte, même hauteur de ligne pour tout : alignement sur la ligne de base */}
+          <p style={{ margin: "8px 0 0", fontSize: 20, lineHeight: "48px", height: 48, whiteSpace: "nowrap" }}>
+            <span style={chiffre(VERT)}>{l.reussis}</span>
+            <span style={{ margin: "0 10px" }}>marqué{l.reussis > 1 ? "s" : ""} sur</span>
+            <span style={chiffre("#111827")}>{l.tentes}</span>
           </p>
           <Pastilles l={l} />
         </>
       ) : (
-        <p style={{ margin: "10px 0 0", fontSize: 19, color: "#6b7280" }}>Pas de tir</p>
+        <p style={{ margin: "8px 0 0", fontSize: 19, lineHeight: "48px", color: "#6b7280" }}>Pas de tir</p>
       )}
     </div>
   );
 
   const compte = (label: string, n: number, couleur: string, detail?: string) => (
-    <div style={{ ...bloc, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+    <div style={{ ...bloc, display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", columnGap: 12 }}>
       <div>
         <p style={titreBloc}>{label}</p>
-        {detail && <p style={{ margin: "4px 0 0", fontSize: 15, color: "#4b5563" }}>{detail}</p>}
+        {detail && <p style={{ margin: "6px 0 0", fontSize: 15, lineHeight: "20px", color: "#4b5563" }}>{detail}</p>}
       </div>
-      <span style={{ ...grosChiffre, fontSize: 56, color: couleur }}>{n}</span>
+      <span style={{ ...chiffre(couleur, 50), display: "block", lineHeight: "56px" }}>{n}</span>
     </div>
   );
 
@@ -485,8 +495,7 @@ function PageJoueur({
     <div data-print-page style={{ ...PDF_PAGE, padding: "38px 50px 30px", gap: 20 }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, borderBottom: "4px solid #1E3A6E", paddingBottom: 14 }}>
         <div style={{ minWidth: 0 }}>
-          <p style={{ margin: 0, fontSize: 15, color: "#4b5563" }}>Mon match</p>
-          <p style={{ ...PDF_TITRE, fontSize: 58, margin: "2px 0 0", lineHeight: 0.95 }}>{prenom} <span style={{ color: "#1E3A6E" }}>{nomFamille}</span></p>
+          <p style={{ ...PDF_TITRE, fontSize: 58, margin: 0, lineHeight: 1.05 }}>{prenom} <span style={{ color: "#1E3A6E" }}>{nomFamille}</span></p>
           <p style={{ margin: "8px 0 0", fontSize: 18 }}>
             {match.adversaire ? `France contre ${match.adversaire}` : "Match de la France"} · {date}
           </p>
@@ -509,7 +518,6 @@ function PageJoueur({
             <p style={{ margin: 0, display: "flex", alignItems: "center", gap: 12 }}>
               <svg width="26" height="26" viewBox="0 0 26 26"><path d="M5 5 L21 21 M21 5 L5 21" stroke={ROUGE} strokeWidth="4" strokeLinecap="round" /></svg> Raté
             </p>
-            <p style={{ margin: 0, fontSize: 15, color: "#4b5563", lineHeight: 1.4 }}>Le panier<br />est en haut.</p>
           </div>
         </div>
       </div>
