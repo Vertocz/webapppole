@@ -9,7 +9,7 @@ import Card from "@/components/Card";
 import {
   type Action, type Match, type StatsBloc, calculerStats, estTir, fmtLigne, fmtPct, fmtTemps, score,
 } from "@/lib/analyse";
-import CarteTirs, { COULEURS_PDF } from "./CarteTirs";
+import CarteTirs, { COULEURS_PDF, fmtZoneLigne, fmtZonePct, statsZones } from "./CarteTirs";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-sub)",
@@ -95,11 +95,14 @@ export default function RapportMatch({
     setPdf("en_cours");
     try {
       const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([import("jspdf"), import("html2canvas")]);
-      const page = printRef.current?.querySelector<HTMLDivElement>("[data-print-page]");
-      if (!page) throw new Error("page introuvable");
-      const canvas = await html2canvas(page, { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false });
+      const pages = Array.from(printRef.current?.querySelectorAll<HTMLDivElement>("[data-print-page]") ?? []);
+      if (!pages.length) throw new Error("page introuvable");
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      doc.addImage(canvas.toDataURL("image/jpeg", 0.93), "JPEG", 0, 0, 210, 297);
+      for (let i = 0; i < pages.length; i++) {
+        const canvas = await html2canvas(pages[i], { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false });
+        if (i > 0) doc.addPage();
+        doc.addImage(canvas.toDataURL("image/jpeg", 0.93), "JPEG", 0, 0, 210, 297);
+      }
       const adv = (match.adversaire || "match").toLowerCase().replace(/[^a-z0-9]+/g, "-");
       doc.save(`stats_${match.date_match}_${adv}.pdf`);
       setPdf("ok");
@@ -231,12 +234,24 @@ export default function RapportMatch({
             </button>
           ))}
         </div>
-        <div className="max-w-md mx-auto">
-          <CarteTirs tirs={tirsFiltres} />
+        <div className="flex flex-wrap items-start gap-5">
+          <div className="flex-1 min-w-[260px] max-w-md">
+            <CarteTirs tirs={tirsFiltres} />
+            <p className="text-[11px] mt-2 text-center" style={{ color: "var(--text-muted)" }}>● rentré · ✕ raté</p>
+          </div>
+          <table className="text-sm w-full sm:w-56" style={{ fontVariantNumeric: "tabular-nums" }}>
+            <caption className="text-left pb-1.5" style={labelStyle}>Réussite par zone</caption>
+            <tbody>
+              {statsZones(tirsFiltres).map((z) => (
+                <tr key={z.id} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td className="py-1.5" style={{ color: "var(--text-sub)" }}>{z.label}</td>
+                  <td className="py-1.5 px-2 text-right" style={{ color: "var(--text-main)" }}>{fmtZoneLigne(z.l)}</td>
+                  <td className="py-1.5 text-right w-12" style={{ color: z.l.tentes ? "var(--accent)" : "var(--text-muted)" }}>{fmtZonePct(z.l)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <p className="text-[11px] mt-2 text-center" style={{ color: "var(--text-muted)" }}>
-          ● rentré · ✕ raté · pourcentage par zone (hors lancers francs)
-        </p>
       </Card>
 
       {actions.some((a) => a.type === "repere") && (
@@ -258,13 +273,33 @@ export default function RapportMatch({
 
       {/* Page imprimée pour le PDF (hors écran) */}
       <div ref={printRef} style={{ position: "fixed", left: "-9999px", top: 0, pointerEvents: "none", zIndex: -1 }} aria-hidden="true">
-        <PagePDF match={match} ids={idsJoueurs} actions={actions} lignes={lignesEquipe(stats.equipe, stats.adversaire, avecAdv, avecAdv)} stats={stats} nom={nom} sc={sc} avecAdv={avecAdv} />
+        <PageCoach match={match} ids={idsJoueurs} actions={actions} lignes={lignesEquipe(stats.equipe, stats.adversaire, avecAdv, avecAdv)} stats={stats} nom={nom} sc={sc} avecAdv={avecAdv} />
+        {idsJoueurs.map((id) => (
+          <PageJoueur
+            key={id}
+            match={match}
+            prenom={joueurs.find((j) => j.id === id)?.prenom ?? "Joueur"}
+            nomFamille={joueurs.find((j) => j.id === id)?.nom ?? ""}
+            s={stats.joueurs[id]}
+            tirs={actions.filter((a) => estTir(a) && a.equipe === "nous" && a.joueuse_id === id)}
+            sc={sc}
+            avecAdv={avecAdv}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
-function PagePDF({
+// ─── PDF ─────────────────────────────────────────────────────────────────────
+// Page 1 : vue d'ensemble pour le coach. Pages suivantes : une par joueur,
+// écrite pour être lue facilement (gros texte, mots simples, pastilles à compter).
+
+const PDF_FONT: React.CSSProperties = { fontFamily: "'DM Sans', sans-serif", boxSizing: "border-box" };
+const PDF_TITRE: React.CSSProperties = { fontFamily: "'Bebas Neue', sans-serif", letterSpacing: "0.03em", fontWeight: 400 };
+const PDF_PAGE: React.CSSProperties = { ...PDF_FONT, width: 794, height: 1123, background: "#fff", color: "#111827", display: "flex", flexDirection: "column" };
+
+function PageCoach({
   match, ids, actions, lignes, stats, nom, sc, avecAdv,
 }: {
   match: Match;
@@ -276,28 +311,29 @@ function PagePDF({
   sc: { nous: number; adversaire: number };
   avecAdv: boolean;
 }) {
-  const S: React.CSSProperties = { fontFamily: "'DM Sans', sans-serif", boxSizing: "border-box" };
-  const titre: React.CSSProperties = { fontFamily: "'Bebas Neue', sans-serif", letterSpacing: "0.03em" };
-  const lab: React.CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6b7280", margin: "0 0 8px" };
+  const lab: React.CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6b7280", margin: "0 0 6px" };
   const td: React.CSSProperties = { padding: "5px 6px", borderTop: "1px solid #e5e7eb", fontSize: 11.5 };
   const tirsNous = actions.filter((a) => estTir(a) && a.equipe === "nous");
+  const zones = statsZones(tirsNous);
+  const reperes = actions.filter((a) => a.type === "repere");
+  const MAX_REPERES = 12;
 
   return (
-    <div data-print-page style={{ ...S, width: 794, height: 1123, background: "#fff", color: "#111827", padding: "40px 46px", display: "flex", flexDirection: "column", gap: 18 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "3px solid #1E3A6E", paddingBottom: 12 }}>
+    <div data-print-page style={{ ...PDF_PAGE, padding: "36px 46px 28px", gap: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "3px solid #1E3A6E", paddingBottom: 10 }}>
         <div>
-          <p style={{ ...lab, margin: 0 }}>Pôle France · Para Basketball Adapté · Analyse vidéo</p>
-          <p style={{ ...titre, fontSize: 34, margin: "4px 0 0", lineHeight: 1 }}>{titreMatch(match)}</p>
-          <p style={{ fontSize: 12, color: "#4b5563", margin: "4px 0 0" }}>{dateMatch(match)}{match.competition ? ` · ${match.competition}` : ""}</p>
+          <p style={{ ...lab, margin: 0 }}>Pôle France · Para Basketball Adapté · Analyse vidéo · Page coach</p>
+          <p style={{ ...PDF_TITRE, fontSize: 34, margin: "3px 0 0", lineHeight: 1 }}>{titreMatch(match)}</p>
+          <p style={{ fontSize: 12, color: "#4b5563", margin: "3px 0 0" }}>{dateMatch(match)}{match.competition ? ` · ${match.competition}` : ""}</p>
         </div>
-        <p style={{ ...titre, fontSize: 52, margin: 0, lineHeight: 1 }}>
+        <p style={{ ...PDF_TITRE, fontSize: 52, margin: 0, lineHeight: 1 }}>
           <span style={{ color: "#C49A28" }}>{sc.nous}</span>
           <span style={{ color: "#9ca3af" }}> – </span>
           <span>{avecAdv ? sc.adversaire : "?"}</span>
         </p>
       </div>
 
-      <div style={{ display: "flex", gap: 24 }}>
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
         <div style={{ flex: 1 }}>
           <p style={lab}>Équipe</p>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -322,8 +358,25 @@ function PagePDF({
         <div style={{ width: 300 }}>
           <p style={lab}>Carte des tirs · France</p>
           <CarteTirs tirs={tirsNous} couleurs={COULEURS_PDF} />
-          <p style={{ fontSize: 9.5, color: "#6b7280", margin: "6px 0 0", textAlign: "center" }}>● rentré · ✕ raté · % par zone, hors LF</p>
+          <p style={{ fontSize: 9.5, color: "#6b7280", margin: "5px 0 0", textAlign: "center" }}>● rentré · ✕ raté</p>
         </div>
+      </div>
+
+      <div>
+        <p style={lab}>Réussite par zone · France (hors lancers francs)</p>
+        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+          <thead>
+            <tr>{zones.map((z) => <th key={z.id} style={{ ...td, borderTop: "none", fontSize: 10.5, color: "#6b7280", textAlign: "center", fontWeight: 600 }}>{z.label}</th>)}</tr>
+          </thead>
+          <tbody>
+            <tr>{zones.map((z) => (
+              <td key={z.id} style={{ ...td, textAlign: "center" }}>
+                <strong style={{ fontWeight: 600 }}>{fmtZoneLigne(z.l)}</strong>
+                <span style={{ color: z.l.tentes ? "#9A7818" : "#9ca3af", marginLeft: 6 }}>{fmtZonePct(z.l)}</span>
+              </td>
+            ))}</tr>
+          </tbody>
+        </table>
       </div>
 
       <div>
@@ -344,38 +397,144 @@ function PagePDF({
             ))}
           </tbody>
         </table>
-        <p style={{ fontSize: 9.5, color: "#6b7280", margin: "6px 0 0" }}>Tirs en réussis/tentés · Reb O / Reb D : rebonds offensifs / défensifs · BG : ballons gagnés · BP : ballons perdus</p>
+        <p style={{ fontSize: 9.5, color: "#6b7280", margin: "5px 0 0" }}>Tirs en réussis/tentés · Reb O / Reb D : rebonds offensifs / défensifs · BG : ballons gagnés · BP : ballons perdus · Détail de chaque joueur dans les pages suivantes</p>
       </div>
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        {ids.slice(0, 4).map((id) => (
-          <div key={id} style={{ width: 160 }}>
-            <p style={{ ...lab, marginBottom: 4 }}>{nom(id).split(" ")[0]}</p>
-            <CarteTirs tirs={tirsNous.filter((a) => a.joueuse_id === id)} couleurs={COULEURS_PDF} />
-          </div>
-        ))}
-      </div>
-
-      {(() => {
-        const reperes = actions.filter((a) => a.type === "repere");
-        if (!reperes.length) return null;
-        const max = 10;
-        return (
-          <div>
-            <p style={lab}>Repères</p>
-            {reperes.slice(0, max).map((a) => (
-              <p key={a.id} style={{ fontSize: 11, margin: "0 0 3px", display: "flex", gap: 10 }}>
-                <span style={{ width: 44, color: "#9A7818", fontVariantNumeric: "tabular-nums" }}>{fmtTemps(a.t - (match.video_debut ?? 0))}</span>
-                <span style={{ color: a.titre ? "#111827" : "#9ca3af" }}>{a.titre || "Sans titre"}</span>
+      {reperes.length > 0 && (
+        <div>
+          <p style={lab}>Repères</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 24, rowGap: 3 }}>
+            {reperes.slice(0, MAX_REPERES).map((a) => (
+              <p key={a.id} style={{ fontSize: 11, margin: 0, display: "flex", gap: 10, minWidth: 0 }}>
+                <span style={{ width: 40, flexShrink: 0, color: "#9A7818", fontVariantNumeric: "tabular-nums" }}>{fmtTemps(a.t - (match.video_debut ?? 0))}</span>
+                <span style={{ color: a.titre ? "#111827" : "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.titre || "Sans titre"}</span>
               </p>
             ))}
-            {reperes.length > max && <p style={{ fontSize: 10, color: "#6b7280", margin: "4px 0 0" }}>… et {reperes.length - max} autres repères dans l&apos;application</p>}
           </div>
-        );
-      })()}
+          {reperes.length > MAX_REPERES && <p style={{ fontSize: 10, color: "#6b7280", margin: "3px 0 0" }}>… et {reperes.length - MAX_REPERES} autres repères dans l&apos;application</p>}
+        </div>
+      )}
 
       <p style={{ marginTop: "auto", fontSize: 9, color: "#9ca3af" }}>
         Stats saisies par le staff à partir de la vidéo. Généré le {new Date().toLocaleDateString("fr-FR")}.
+      </p>
+    </div>
+  );
+}
+
+const VERT = "#15803d";
+const ROUGE = "#dc2626";
+
+/** Une pastille par tir : verte et pleine si marqué, cercle rouge vide si raté. */
+function Pastilles({ l }: { l: { reussis: number; tentes: number } }) {
+  if (l.tentes > 24) return null; // trop nombreux pour être comptés d'un coup d'œil : le nombre suffit
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+      {Array.from({ length: l.tentes }, (_, i) => (
+        <span
+          key={i}
+          style={i < l.reussis
+            ? { width: 18, height: 18, borderRadius: 9, background: VERT }
+            : { width: 18, height: 18, borderRadius: 9, border: `3px solid ${ROUGE}`, boxSizing: "border-box" }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function PageJoueur({
+  match, prenom, nomFamille, s, tirs, sc, avecAdv,
+}: {
+  match: Match;
+  prenom: string;
+  nomFamille: string;
+  s: StatsBloc;
+  tirs: Action[];
+  sc: { nous: number; adversaire: number };
+  avecAdv: boolean;
+}) {
+  const bloc: React.CSSProperties = { border: "2px solid #e5e7eb", borderRadius: 14, padding: "14px 18px" };
+  const titreBloc: React.CSSProperties = { fontSize: 19, fontWeight: 700, margin: 0 };
+  const grosChiffre: React.CSSProperties = { ...PDF_TITRE, fontSize: 46, lineHeight: 1 };
+  const date = new Date(match.date_match + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+
+  const tir = (label: string, l: { reussis: number; tentes: number }) => (
+    <div style={bloc}>
+      <p style={titreBloc}>{label}</p>
+      {l.tentes ? (
+        <>
+          <p style={{ margin: "6px 0 0", fontSize: 20, display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ ...grosChiffre, color: VERT }}>{l.reussis}</span>
+            <span>marqué{l.reussis > 1 ? "s" : ""} sur</span>
+            <span style={{ ...grosChiffre, color: "#111827" }}>{l.tentes}</span>
+          </p>
+          <Pastilles l={l} />
+        </>
+      ) : (
+        <p style={{ margin: "10px 0 0", fontSize: 19, color: "#6b7280" }}>Pas de tir</p>
+      )}
+    </div>
+  );
+
+  const compte = (label: string, n: number, couleur: string, detail?: string) => (
+    <div style={{ ...bloc, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div>
+        <p style={titreBloc}>{label}</p>
+        {detail && <p style={{ margin: "4px 0 0", fontSize: 15, color: "#4b5563" }}>{detail}</p>}
+      </div>
+      <span style={{ ...grosChiffre, fontSize: 56, color: couleur }}>{n}</span>
+    </div>
+  );
+
+  return (
+    <div data-print-page style={{ ...PDF_PAGE, padding: "38px 50px 30px", gap: 20 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, borderBottom: "4px solid #1E3A6E", paddingBottom: 14 }}>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 15, color: "#4b5563" }}>Mon match</p>
+          <p style={{ ...PDF_TITRE, fontSize: 58, margin: "2px 0 0", lineHeight: 0.95 }}>{prenom} <span style={{ color: "#1E3A6E" }}>{nomFamille}</span></p>
+          <p style={{ margin: "8px 0 0", fontSize: 18 }}>
+            {match.adversaire ? `France contre ${match.adversaire}` : "Match de la France"} · {date}
+          </p>
+          <p style={{ margin: "4px 0 0", fontSize: 18 }}>
+            Score : <strong>France {sc.nous}</strong>{avecAdv ? <> · {match.adversaire || "Adversaire"} {sc.adversaire}</> : null}
+          </p>
+        </div>
+        <div style={{ textAlign: "center", background: "#FBF5E6", border: "3px solid #C49A28", borderRadius: 16, padding: "10px 22px", flexShrink: 0 }}>
+          <p style={{ ...PDF_TITRE, fontSize: 84, lineHeight: 0.9, margin: 0, color: "#9A7818" }}>{s.points}</p>
+          <p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700 }}>point{s.points > 1 ? "s" : ""}</p>
+        </div>
+      </div>
+
+      <div>
+        <p style={{ ...titreBloc, fontSize: 22, margin: "0 0 8px" }}>Mes tirs sur le terrain</p>
+        <div style={{ display: "flex", gap: 22, alignItems: "center" }}>
+          <div style={{ width: 470 }}>
+            <CarteTirs tirs={tirs} couleurs={{ ...COULEURS_PDF, reussi: VERT, rate: ROUGE }} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18, fontSize: 20 }}>
+            <p style={{ margin: 0, display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ width: 26, height: 26, borderRadius: 13, background: VERT, display: "inline-block" }} /> Marqué
+            </p>
+            <p style={{ margin: 0, display: "flex", alignItems: "center", gap: 12 }}>
+              <svg width="26" height="26" viewBox="0 0 26 26"><path d="M5 5 L21 21 M21 5 L5 21" stroke={ROUGE} strokeWidth="4" strokeLinecap="round" /></svg> Raté
+            </p>
+            <p style={{ margin: 0, fontSize: 15, color: "#4b5563", lineHeight: 1.4 }}>Le panier<br />est en haut.</p>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        {tir("Tirs à 1 point", s.tirs1)}
+        {tir("Tirs à 2 points", s.tirs2)}
+        {tir("Lancers francs", s.lf)}
+        {compte("Rebonds", s.rebOff + s.rebDef, "#1E3A6E", s.rebOff + s.rebDef ? `${s.rebDef} en défense · ${s.rebOff} en attaque` : undefined)}
+        {compte("Ballons gagnés", s.gagnes, VERT)}
+        {compte("Ballons perdus", s.perdus, ROUGE)}
+      </div>
+
+      <p style={{ marginTop: "auto", fontSize: 11, color: "#9ca3af", display: "flex", justifyContent: "space-between" }}>
+        <span>Pôle France · Para Basketball Adapté</span>
+        <span>{titreMatch(match)} · {date}</span>
       </p>
     </div>
   );

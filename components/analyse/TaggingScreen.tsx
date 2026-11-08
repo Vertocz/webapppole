@@ -16,6 +16,7 @@ import Terrain, { tx } from "./Terrain";
 import { ChoixJoueur, Modale, type Choix } from "./Modale";
 
 type ModalState =
+  | { kind: "menu"; t: number; pos: { x: number; y: number } | null } // clic sur la vidéo : quelle action ?
   | { kind: "tir"; t: number; x: number | null; y: number | null; points: 1 | 2 | null; zone: Zone | null }
   | { kind: "lf"; t: number }
   | { kind: "rebond"; t: number }
@@ -290,6 +291,12 @@ export default function TaggingScreen({
     if (relancer && relancerRef.current) videoRef.current?.play().catch(() => {});
   }, []);
 
+  /** Change de modale sans toucher à la lecture (la vidéo est déjà en pause). */
+  const passerA = useCallback((m: ModalState) => {
+    setRebondForce(null);
+    setModal(m);
+  }, []);
+
   const tempsCourant = () => videoRef.current?.currentTime ?? 0;
 
   const ouvrirTir = useCallback((pos: { x: number; y: number } | null) => {
@@ -412,16 +419,36 @@ export default function TaggingScreen({
       return;
     }
 
+    // Position du clic sur le terrain, gardée au cas où l'action est un tir
+    let pos: { x: number; y: number } | null = null;
     if (modeClic === "video" && calibrage) {
       const p = appliquer(calibrage.versTerrain, u, vv);
       if (p && p.x >= -8 && p.x <= 8 && p.y >= -0.5 && p.y <= 11.5) {
-        ouvrirTir({ x: Math.max(-7.5, Math.min(7.5, p.x)), y: Math.max(0, Math.min(11, p.y)) });
-        return;
+        pos = { x: Math.max(-7.5, Math.min(7.5, p.x)), y: Math.max(0, Math.min(11, p.y)) };
       }
-      setToast({ texte: "Clic en dehors du terrain : place le tir sur le schéma." });
     }
-    ouvrirTir(null);
+    ouvrir({ kind: "menu", t: v.currentTime, pos });
   };
+
+  /** Choix fait dans le menu ouvert par le clic sur la vidéo. */
+  const choisirAction = useCallback((kind: "tir" | "lf" | "rebond" | "ballon_gagne" | "ballon_perdu" | "repere" | "reussi" | "rate") => {
+    const m = modalRef.current;
+    if (m?.kind !== "menu") return;
+    if (kind === "reussi" || kind === "rate") {
+      trancher(enAttente[0], kind);
+      fermer(true);
+      return;
+    }
+    if (kind === "tir") {
+      if (m.pos) {
+        const c = classerTir(m.pos.x, m.pos.y);
+        passerA({ kind: "tir", t: m.t, x: m.pos.x, y: m.pos.y, points: c.points, zone: c.zone });
+      } else {
+        passerA({ kind: "tir", t: m.t, x: null, y: null, points: null, zone: null });
+      }
+    } else if (kind === "repere") passerA({ kind: "repere", t: m.t, titre: "" });
+    else passerA({ kind, t: m.t });
+  }, [passerA, fermer, trancher, enAttente]);
 
   // ─── Lignes du terrain et repères sur la vidéo ───────────────────────────
 
@@ -548,7 +575,7 @@ export default function TaggingScreen({
   ];
 
   const boutonsActions: { kind: "tir" | ModalState["kind"]; label: string; touche: string; couleur: string }[] = [
-    { kind: "tir", label: "Tir (sans clic)", touche: "T", couleur: "var(--primary-light)" },
+    { kind: "tir", label: "Tir", touche: "T", couleur: "var(--primary-light)" },
     { kind: "lf", label: "Lancer franc", touche: "L", couleur: "var(--primary-light)" },
     { kind: "rebond", label: "Rebond", touche: "B", couleur: "#C49A28" },
     { kind: "ballon_gagne", label: "Ballon gagné", touche: "G", couleur: "#22c55e" },
@@ -607,9 +634,9 @@ export default function TaggingScreen({
                 onClick={() => changerModeClic(m)}
                 className="px-2.5 py-1 rounded-md text-xs font-medium"
                 style={modeClic === m ? { background: "var(--primary)", color: "white" } : { color: "var(--text-muted)" }}
-                title={m === "video" ? "Le clic sur les pieds du tireur donne la position (calibrage requis)" : "La position se place sur un terrain dessiné"}
+                title={m === "video" ? "Pour un tir, le clic sur les pieds du tireur donne la position (calibrage requis)" : "La position d'un tir se place sur un terrain dessiné"}
               >
-                {m === "video" ? "Clic sur la vidéo" : "Terrain dessiné"}
+                {m === "video" ? "Position au clic" : "Position sur schéma"}
               </button>
             ))}
           </div>
@@ -658,7 +685,7 @@ export default function TaggingScreen({
                   className="absolute inset-0"
                   style={{ cursor: "crosshair" }}
                   onClick={clicVideo}
-                  title={calibMode ? "Clique sur le repère sélectionné" : "Clic au déclenchement du tir, sur les pieds du tireur"}
+                  title={calibMode ? "Clique sur le repère sélectionné" : "Clic dès qu'il se passe quelque chose (pour un tir : sur les pieds du tireur)"}
                 />
               </>
             ) : (
@@ -803,12 +830,13 @@ export default function TaggingScreen({
                   </button>
                 ))}
                 <p className="col-span-2 text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>
+                  Clic sur la vidéo dès qu&apos;il se passe quelque chose, puis choix de l&apos;action.{" "}
                   {modeClic === "video" && calibrage
-                    ? "Clic sur les pieds du tireur au déclenchement du tir."
+                    ? "Pour un tir, clique sur les pieds du tireur : la position est prise au clic."
                     : modeClic === "video"
-                    ? "Calibre le terrain pour prendre la position au clic. En attendant, le clic ouvre le terrain dessiné."
-                    : "Clic sur la vidéo au déclenchement du tir, puis place-le sur le terrain."}
-                  {" "}Espace : pause · ← → : 5 s · N : repère · Ctrl+Z : annuler
+                    ? "Calibre le terrain pour que la position d'un tir soit prise au clic."
+                    : "La position d'un tir se place sur le terrain dessiné."}
+                  {" "}Les lettres marchent aussi sans clic. Espace : pause · ← → : 5 s · Ctrl+Z : annuler
                 </p>
               </div>
 
@@ -919,6 +947,15 @@ export default function TaggingScreen({
       </div>
 
       {/* ── Modales ── */}
+      {modal?.kind === "menu" && (
+        <MenuActions
+          sousTitre={`à ${fmtTemps(modal.t - debut)} · ${modal.pos ? "position du clic gardée pour un tir" : calibrage && modeClic === "video" ? "clic hors du terrain : un tir se placera sur le schéma" : "un tir se placera sur le schéma"}`}
+          attente={enAttente[0] ? `${enAttente[0].type === "lf" ? "Lancer franc" : `Tir ${enAttente[0].points} pt${enAttente[0].points === 2 ? "s" : ""}`} de ${nomDe(enAttente[0])}` : null}
+          onChoisir={choisirAction}
+          onAnnuler={() => fermer(true)}
+        />
+      )}
+
       {modal?.kind === "tir" && (
         <Modale titre="Tir" sousTitre={`à ${fmtTemps(modal.t - debut)} · le résultat se donne ensuite`} onAnnuler={() => fermer(true)} large={modal.x === null}>
           {modal.x === null && (
@@ -1022,6 +1059,70 @@ export default function TaggingScreen({
         </Modale>
       )}
     </div>
+  );
+}
+
+const ACTIONS_MENU: { kind: "tir" | "lf" | "rebond" | "ballon_gagne" | "ballon_perdu" | "repere"; label: string; touche: string; couleur: string }[] = [
+  { kind: "tir", label: "Tir", touche: "T", couleur: "var(--primary-light)" },
+  { kind: "lf", label: "Lancer franc", touche: "L", couleur: "var(--primary-light)" },
+  { kind: "rebond", label: "Rebond", touche: "B", couleur: "#C49A28" },
+  { kind: "repere", label: "Repère", touche: "N", couleur: "var(--text-sub)" },
+  { kind: "ballon_gagne", label: "Ballon gagné", touche: "G", couleur: "#22c55e" },
+  { kind: "ballon_perdu", label: "Ballon perdu", touche: "P", couleur: "#ef4444" },
+];
+
+/** Menu ouvert par un clic sur la vidéo : que s'est-il passé ? */
+function MenuActions({
+  sousTitre, attente, onChoisir, onAnnuler,
+}: {
+  sousTitre: string;
+  attente: string | null;
+  onChoisir: (kind: (typeof ACTIONS_MENU)[number]["kind"] | "reussi" | "rate") => void;
+  onAnnuler: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (e.key === "Escape") { e.preventDefault(); onAnnuler(); return; }
+      if (attente && (k === "r" || k === "m")) { e.preventDefault(); onChoisir(k === "r" ? "reussi" : "rate"); return; }
+      const a = ACTIONS_MENU.find((x) => x.touche.toLowerCase() === k);
+      // preventDefault : la lettre ne doit pas arriver dans le champ qui s'ouvre ensuite (titre du repère)
+      if (a) { e.preventDefault(); onChoisir(a.kind); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [attente, onChoisir, onAnnuler]);
+
+  return (
+    <Modale titre="Que se passe-t-il ?" sousTitre={sousTitre} onAnnuler={onAnnuler}>
+      {attente && (
+        <div className="mb-3 p-3 rounded-xl" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.4)" }}>
+          <p className="text-xs mb-2" style={{ color: "#fcd34d" }}>{attente} en attente</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => onChoisir("reussi")} className="hover-lift flex items-center justify-between px-3 py-3 rounded-xl text-sm font-semibold" style={{ background: "#16a34a", color: "white" }}>
+              <span>✓ Rentré</span><kbd className="text-xs opacity-80" style={{ fontFamily: "inherit" }}>R</kbd>
+            </button>
+            <button onClick={() => onChoisir("rate")} className="hover-lift flex items-center justify-between px-3 py-3 rounded-xl text-sm font-semibold" style={{ background: "#b91c1c", color: "white" }}>
+              <span>✗ Raté</span><kbd className="text-xs opacity-80" style={{ fontFamily: "inherit" }}>M</kbd>
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        {ACTIONS_MENU.map((a) => (
+          <button
+            key={a.kind}
+            onClick={() => onChoisir(a.kind)}
+            className="hover-lift flex items-center justify-between gap-2 px-4 py-4 rounded-xl text-base font-semibold text-left"
+            style={{ background: `color-mix(in srgb, ${a.couleur} 16%, var(--bg-card2))`, border: `1px solid color-mix(in srgb, ${a.couleur} 45%, transparent)`, color: "var(--text-main)" }}
+          >
+            <span>{a.label}</span>
+            <kbd className="text-xs px-1.5 py-0.5 rounded" style={{ border: "1px solid var(--border)", color: "var(--text-sub)", fontFamily: "inherit" }}>{a.touche}</kbd>
+          </button>
+        ))}
+      </div>
+    </Modale>
   );
 }
 
