@@ -55,14 +55,18 @@ Onglet « Analyse vidéo » de l'espace staff (`components/analyse/`, logique da
 
 - Le coach crée le match (date, adversaire, 4 joueurs, suivi de l'adversaire) puis ouvre la vidéo
   depuis son PC : elle est lue localement, jamais envoyée.
-- Clic sur les pieds du tireur au déclenchement du tir → pause → choix du joueur → la vidéo repart.
+- Clic sur la vidéo dès qu'il se passe quelque chose → pause → menu des actions (tir, lancer franc,
+  rebond offensif/défensif, ballon gagné/perdu, repère, ou rentré/raté du tir en attente) → choix du joueur → la vidéo repart.
+  Pour un tir, cliquer sur les pieds du tireur : la position est prise au clic si le terrain est calibré.
   Le résultat (rentré / raté) se donne ensuite, et un rebond tagué passe le tir en attente en raté.
 - Position du tir : calibrage du terrain (4 repères minimum) ou terrain dessiné.
 - Repères : N (ou le bouton) marque un moment de la vidéo avec un titre libre ; les titres déjà
   utilisés sont proposés. Repères visibles dans la liste, sur la barre de lecture et dans les stats.
-- Raccourcis : Espace, ← →, T tir, L lancer franc, B rebond, G/P ballon gagné/perdu, N repère,
+- Raccourcis : Espace, ← →, T tir, L lancer franc, O/D rebond offensif/défensif, G/P ballon gagné/perdu, N repère,
   R/M résultat, 1-4 joueur, 0 adversaire, Ctrl+Z annuler.
-- Stats du match, carte des tirs par zone, export PDF et évolution sur plusieurs matchs.
+- Stats du match, carte des tirs et réussite par zone, évolution sur plusieurs matchs.
+- Export PDF : une page coach, puis une page par joueur écrite pour être lue facilement
+  (gros texte, mots simples, pastilles à compter, grand schéma des tirs).
 
 ## Mode hors ligne
 
