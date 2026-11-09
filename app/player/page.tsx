@@ -24,6 +24,7 @@ import NotificationsInbox from "@/components/NotificationsInbox";
 import { useBadges } from "@/lib/useBadges";
 import NotifModal from "@/components/NotifModal";
 import QuestionnaireTab from "@/components/QuestionnaireTab";
+import { useOngletUrl } from "@/lib/useOngletUrl";
 
 const ALL_BASE_TABS = [
   { id: "billets", label: "Billets", icon: "🎫" },
@@ -40,7 +41,7 @@ const TAB_QUESTIONNAIRE = { id: "questionnaire", label: "Questionnaire", icon: "
 
 export default function JoueuseePage() {
   const [user, setUser] = useState<Joueuse | null>(null);
-  const [activeTab, setActiveTab] = useState("sportif");
+  const [ongletUrl, setActiveTab] = useOngletUrl("sportif");
   const [hasBillets, setHasBillets] = useState(false);
   const [hasCarte, setHasCarte] = useState(false);
   const [hasBadges, setHasBadges] = useState(false);
@@ -114,8 +115,10 @@ export default function JoueuseePage() {
     const nid = params.get("notif_id");
     if (nid) {
       setNotifId(nid);
-      // Nettoyer l'URL sans recharger la page
-      window.history.replaceState({}, "", window.location.pathname);
+      // Nettoyer l'URL sans recharger la page (en gardant l'onglet éventuel)
+      params.delete("notif_id");
+      const reste = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (reste ? `?${reste}` : ""));
     }
   }, [router, checkAndAward]);
 
@@ -169,6 +172,8 @@ export default function JoueuseePage() {
     ...(hasBadges ? [TAB_BADGES] : []),
     ...(hasQuestionnaire ? [TAB_QUESTIONNAIRE] : []),
   ];
+  // Onglet de l'URL indisponible pour ce joueur (ou lien périmé) → accueil
+  const activeTab = tabs.some((t) => t.id === ongletUrl) ? ongletUrl : "sportif";
 
   return (
     <>

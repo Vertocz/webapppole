@@ -27,6 +27,7 @@ import type { Staff, Joueuse } from "@/types";
 import PwaBanner from "@/components/PwaBanner";
 import NotifModal from "@/components/NotifModal";
 import AnalyseVideoTab from "@/components/analyse/AnalyseVideoTab";
+import { useOngletUrl } from "@/lib/useOngletUrl";
 
 type View = "billets" | "joueurs" | "analyse" | "tournois" | "gares" | "jeux" | "carte" | "victorinis";
 
@@ -36,8 +37,10 @@ export default function StaffPage() {
   const [selectedJoueur, setSelectedJoueur] = useState<Joueuse | null>(null);
   const [ongletActif, setOngletActif] = useState("sportif");
   const [loadingJoueurs, setLoadingJoueurs] = useState(true);
-  const [view, setView] = useState<View>("joueurs");
   const [hasBillets, setHasBillets] = useState(false);
+  // Accueil : « Mes billets » s'il y a un déplacement d'actualité, sinon « Suivi joueurs »
+  const accueil: View = hasBillets ? "billets" : "joueurs";
+  const [viewUrl, setViewUrl] = useOngletUrl(accueil);
   const [hasCarte, setHasCarte] = useState(false);
   const [hasTrajetsAVenir, setHasTrajetsAVenir] = useState(false);
   const [newBadgeIds, setNewBadgeIds] = useState<string[]>([]);
@@ -82,14 +85,13 @@ export default function StaffPage() {
     const nid = params.get("notif_id");
     if (nid) {
       setNotifId(nid);
-      window.history.replaceState({}, "", window.location.pathname);
+      params.delete("notif_id");
+      const reste = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (reste ? `?${reste}` : ""));
     }
 
     // Billets / Ma carte : seulement s'il reste un déplacement d'actualité
-    aDesBilletsActuels(u.id).then((has) => {
-      setHasBillets(has);
-      if (has) setView("billets");
-    });
+    aDesBilletsActuels(u.id).then(setHasBillets);
 
     // Gares : seulement s'il reste des trajets à venir dans l'app
     aDesTrajetsAVenir().then(setHasTrajetsAVenir);
@@ -159,6 +161,9 @@ export default function StaffPage() {
     { id: "jeux", label: "Jeux", icon: "🎮" },
     ...(isLogisticien && hasTrajetsAVenir ? [{ id: "gares" as View, label: "Gares", icon: "🚉" }] : []),
   ];
+  // Vue de l'URL indisponible (ou lien périmé) → accueil
+  const view: View = viewTabs.some((v) => v.id === viewUrl) ? (viewUrl as View) : accueil;
+  const setView = setViewUrl;
 
   return (
     <>

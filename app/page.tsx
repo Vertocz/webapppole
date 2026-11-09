@@ -39,12 +39,12 @@ export default function HomePage() {
       const { data: joueuses } = await supabase.from("joueuses").select("*").eq("numero_tel", numero);
       if (joueuses && joueuses.length > 0) {
         setSession(joueuses[0], "joueuse");
-        router.push("/player"); return;
+        router.replace("/player"); return;
       }
       const { data: staff } = await supabase.from("staff").select("*").eq("numero_tel", numero);
       if (staff && staff.length > 0) {
         setSession(staff[0], "staff");
-        router.push("/staff"); return;
+        router.replace("/staff"); return;
       }
       setError("Numéro inconnu. Veuillez contacter votre encadrant.");
     } catch {
