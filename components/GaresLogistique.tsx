@@ -64,19 +64,18 @@ export default function GaresLogistique() {
   const [loading, setLoading]         = useState(true);
   const [loadingData, setLoadingData] = useState(false);
 
-  // ── Étape 1 : dates distinctes ─────────────────────────────────────────────
+  // ── Étape 1 : dates distinctes (à partir d'aujourd'hui, jours passés masqués) ─
   useEffect(() => {
     supabase
       .from("trajets")
       .select("date_depart")
+      .gte("date_depart", todayISO())
       .order("date_depart", { ascending: true })
       .then(({ data }) => {
         if (!data) { setLoading(false); return; }
         const unique = [...new Set(data.map((t) => t.date_depart as string))].sort();
         setDates(unique);
-        const today = todayISO();
-        const idx = unique.indexOf(today);
-        setDateIdx(idx >= 0 ? idx : 0);
+        setDateIdx(0);
         setLoading(false);
       });
   }, []);
@@ -174,7 +173,7 @@ export default function GaresLogistique() {
   if (dates.length === 0) return (
     <div className="text-center py-16" style={{ color: "var(--text-muted)" }}>
       <p className="text-4xl mb-3">🚉</p>
-      <p className="text-sm">Aucun trajet enregistré.</p>
+      <p className="text-sm">Aucun trajet à venir.</p>
     </div>
   );
 
