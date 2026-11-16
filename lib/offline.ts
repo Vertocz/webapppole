@@ -232,11 +232,14 @@ export interface WriteResult {
 export async function writeOrQueue(
   table: string,
   action: OutboxAction,
-  opts: { payload?: OutboxOp["payload"]; rowId?: string; reward?: string } = {}
+  opts: { payload?: OutboxOp["payload"]; rowId?: string | number; reward?: string } = {}
 ): Promise<WriteResult> {
+  // Certaines tables (activites, suivi_forme) ont un id numérique : on le
+  // normalise en texte, sinon `startsWith` plante et rien n'est envoyé.
+  const rowId = opts.rowId === undefined || opts.rowId === null ? undefined : String(opts.rowId);
   // Entrée pas encore envoyée : on modifie la file plutôt que la base
-  if (opts.rowId?.startsWith(PENDING_PREFIX)) {
-    const [opId, idxStr] = opts.rowId.slice(PENDING_PREFIX.length).split("#");
+  if (rowId?.startsWith(PENDING_PREFIX)) {
+    const [opId, idxStr] = rowId.slice(PENDING_PREFIX.length).split("#");
     const idx = idxStr === undefined ? null : Number(idxStr);
     const ops = await getOutbox();
     const op = ops.find((o) => o.id === opId);
@@ -262,7 +265,7 @@ export async function writeOrQueue(
     table,
     action,
     payload: opts.payload,
-    rowId: opts.rowId,
+    rowId,
     reward: opts.reward,
     createdAt: Date.now(),
     attempts: 0,
@@ -382,9 +385,9 @@ export async function applyPending<T extends { id: string }>(
         });
       });
     } else if (op.action === "update") {
-      out = out.map((r) => (r.id === op.rowId ? { ...r, ...(op.payload as object), _pending: true } : r));
+      out = out.map((r) => (String(r.id) === String(op.rowId) ? { ...r, ...(op.payload as object), _pending: true } : r));
     } else {
-      out = out.filter((r) => r.id !== op.rowId);
+      out = out.filter((r) => String(r.id) !== String(op.rowId));
     }
   }
   return out;
