@@ -54,29 +54,29 @@ const TON = {
 };
 type Ton = keyof typeof TON;
 const pastille = (texte: string, ton: Ton = "neutre") =>
-  `<span style="display:inline-block;white-space:nowrap;margin:3px 4px 0 0;padding:3px 9px;border-radius:12px;background:${TON[ton].bg};color:${TON[ton].fg};font-size:13px;font-weight:bold;">${texte}</span>`;
+  `<span style="display:inline-block;white-space:nowrap;margin:4px 4px 0 0;padding:2px 8px;border-radius:10px;background:${TON[ton].bg};color:${TON[ton].fg};font-size:12px;">${texte}</span>`;
 
-function page(titre: string, periode: string, legende: string, contenu: string): string {
+function page(titre: string, periode: string, contenu: string): string {
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#eef2f6;">
 <div style="max-width:600px;margin:0 auto;padding:16px 10px;font-family:Arial,Helvetica,sans-serif;color:${C.texte};font-size:14px;line-height:1.45;">
-<div style="background:${C.marine};color:#ffffff;border-radius:12px 12px 0 0;padding:18px 18px 14px;">
+<div style="background:${C.marine};color:#ffffff;border-radius:12px;padding:16px 18px;margin:0 0 14px;">
 <div style="font-size:19px;font-weight:bold;">${esc(titre)}</div>
 <div style="font-size:13px;opacity:.85;margin-top:2px;">${esc(periode)}</div></div>
-<div style="background:#ffffff;border-radius:0 0 12px 12px;padding:10px 18px;margin:0 0 14px;font-size:12px;color:${C.gris};">${legende}</div>
 ${contenu}
 </div></body></html>`;
 }
+// Hiérarchie : nom du joueur (18px) > rubrique (15px, gras, marine) > entrées (date 12px, texte 14px normal) > pastilles (12px)
 const carte = (titre: string, contenu: string) =>
-  `<div style="background:#ffffff;border-radius:12px;padding:14px 16px 10px;margin:0 0 12px;border-left:4px solid ${C.marine};">
-<div style="font-size:16px;font-weight:bold;margin:0 0 2px;">${esc(titre)}</div>${contenu}</div>`;
+  `<div style="background:#ffffff;border-radius:12px;padding:14px 16px 8px;margin:0 0 12px;">
+<div style="font-size:18px;font-weight:bold;margin:0 0 4px;">${esc(titre)}</div>${contenu}</div>`;
 const rubrique = (t: string) =>
-  `<div style="margin:12px 0 2px;font-size:11px;font-weight:bold;letter-spacing:1px;color:${C.gris};text-transform:uppercase;">${esc(t)}</div>`;
-const entree = (date: string, corps: string, commentaire?: string | null) =>
-  `<div style="padding:7px 0;border-top:1px solid ${C.bord};">
-<div style="font-size:12px;color:${C.gris};">${esc(jourFr(date))}</div>${corps}
-${commentaire?.trim() ? `<div style="margin-top:4px;color:#475569;font-style:italic;">💬 ${esc(commentaire)}</div>` : ""}</div>`;
-const vide = (t: string) => `<div style="padding:6px 0;border-top:1px solid ${C.bord};color:${C.gris};font-style:italic;">${esc(t)}</div>`;
+  `<div style="margin:12px 0 0;padding:0 0 4px;font-size:15px;font-weight:bold;color:${C.marine};border-bottom:2px solid ${C.marine};">${esc(t)}</div>`;
+const entree = (date: string, titre: string, corps: string, commentaire?: string | null) =>
+  `<div style="padding:8px 0;border-bottom:1px solid ${C.bord};">
+<div style="font-size:12px;color:${C.gris};">${esc(jourFr(date))}${titre ? ` · <span style="color:${C.texte};font-size:14px;">${titre}</span>` : ""}</div>${corps}
+${commentaire?.trim() ? `<div style="margin-top:4px;font-size:13px;color:#475569;">💬 ${esc(commentaire)}</div>` : ""}</div>`;
+const vide = (t: string) => `<div style="padding:8px 0;color:${C.gris};font-size:13px;font-style:italic;">${esc(t)}</div>`;
 const blocRien = (js: Joueur[], quoi: string, quand: string) =>
   js.length === 0
     ? `<div style="padding:12px 16px;background:#ffffff;border-radius:12px;color:${C.vert};">✅ Tout le monde a rempli ${esc(quoi)} ${quand}.</div>`
@@ -97,13 +97,11 @@ function tonNote(v: number, sens: "haut" | "bas"): Ton {
   const mauvais = sens === "haut" ? v : 6 - v; // ramène à « plus c'est haut, plus c'est mauvais »
   return mauvais >= 5 ? "rouge" : mauvais >= 4 ? "orange" : "neutre";
 }
-const LEGENDE_FORME = `Forme notée sur 5 : ${INDICATEURS.map((i) => `${i.emoji} ${i.nom}`).join(" · ")}.<br>
-Séances : ⏱ durée · 💪 difficulté /10 · 😄 plaisir /10. En orange ou rouge : point à surveiller.`;
-
 function sectionForme(saisies: Forme[]): string {
   if (saisies.length === 0) return vide("Pas de suivi de forme rempli.");
   return saisies.map((s) => entree(
     s.date,
+    "",
     `<div>${INDICATEURS.map(({ cle, emoji, sensDefavorable }) => {
       const v = Number(s[cle]);
       return pastille(`${emoji} ${v}`, tonNote(v, sensDefavorable));
@@ -116,8 +114,8 @@ function sectionSportif(seances: Activite[]): string {
   if (seances.length === 0) return vide("Pas de séance saisie.");
   return seances.map((a) => entree(
     a.date,
-    `<div style="font-weight:bold;margin-top:1px;">${esc(a.sport)}</div>
-<div>${pastille(`⏱ ${esc(a.duree)}`)}${pastille(`💪 ${a.difficulte}/10`)}${pastille(`😄 ${a.plaisir}/10`)}</div>`,
+    esc(a.sport),
+    `<div>${pastille(`⏱ ${esc(a.duree)}`)}${pastille(`💪 ${a.difficulte}/10`)}${pastille(`😄 ${a.plaisir}/10`)}</div>`,
     a.commentaire,
   )).join("");
 }
@@ -134,7 +132,7 @@ function mailFormeSportif(pole: Pole, joueurs: Joueur[], formes: Forme[], activi
   const periode = `${addDays(debut, 6) === fin ? "Semaine du" : "Du"} ${jourFr(debut, false)} au ${jourFr(fin, false)}`;
   return {
     subject: `Bilan forme & sportif — ${NOM_POLE[pole]} — ${periode.toLowerCase()}`,
-    html: page(`Forme & suivi sportif — ${NOM_POLE[pole]}`, periode, LEGENDE_FORME, cartes.join("") + blocRien(rien, "son suivi", quandPeriode(debut, fin))),
+    html: page("Forme & suivi sportif", periode, cartes.join("") + blocRien(rien, "son suivi", quandPeriode(debut, fin))),
   };
 }
 
@@ -145,9 +143,9 @@ function sectionEmotions(es: Emotion[]): string {
   if (es.length === 0) return vide("Pas de scan émotionnel.");
   return es.map((e) => entree(
     e.date,
-    `<div>${pastille(`${esc(e.emotion_nom)} · ${esc(e.intensite)}/5`)}</div>
-${e.declencheur?.trim() ? `<div style="margin-top:3px;"><span style="color:${C.gris};">Déclencheur :</span> ${esc(e.declencheur)}</div>` : ""}
-${e.ressources?.trim() ? `<div><span style="color:${C.gris};">Ressources :</span> ${esc(e.ressources)}</div>` : ""}`,
+    `${esc(e.emotion_nom)} <span style="color:${C.gris};font-size:12px;">(intensité ${esc(e.intensite)}/5)</span>`,
+    `${e.declencheur?.trim() ? `<div style="margin-top:3px;font-size:13px;"><span style="color:${C.gris};">Déclencheur :</span> ${esc(e.declencheur)}</div>` : ""}
+${e.ressources?.trim() ? `<div style="font-size:13px;"><span style="color:${C.gris};">Ressources :</span> ${esc(e.ressources)}</div>` : ""}`,
   )).join("");
 }
 
@@ -155,8 +153,8 @@ function sectionRespiration(rs: Respiration[]): string {
   if (rs.length === 0) return vide("Pas d'exercice de respiration.");
   return rs.map((r) => entree(
     r.date,
-    `<div style="font-weight:bold;margin-top:1px;">${esc(r.exercice)} <span style="font-weight:normal;color:${C.gris};">· ${esc(CONTEXTE[r.contexte] ?? r.contexte)}</span></div>
-<div>${[r.moment, r.temps].filter((x) => x && String(x).trim()).map((x) => pastille(esc(x))).join("")}</div>`,
+    `${esc(r.exercice)} <span style="color:${C.gris};font-size:12px;">(${esc(CONTEXTE[r.contexte] ?? r.contexte)})</span>`,
+    `<div>${[r.moment, r.temps].filter((x) => x && String(x).trim()).map((x) => pastille(esc(x))).join("")}</div>`,
     r.commentaire,
   )).join("");
 }
@@ -172,8 +170,8 @@ function mailPrepaMentale(joueurs: Joueur[], emotions: Emotion[], respirations: 
   }
   const periode = `${addDays(debut, 6) === fin ? "Semaine du" : "Du"} ${jourFr(debut, false)} au ${jourFr(fin, false)}`;
   return {
-    subject: `Bilan préparation mentale — ${NOM_POLE.masculin} — ${periode.toLowerCase()}`,
-    html: page(`Préparation mentale — ${NOM_POLE.masculin}`, periode, "Scans émotionnels (intensité sur 5) et exercices de respiration.", cartes.join("") + blocRien(rien, "sa prépa mentale", quandPeriode(debut, fin))),
+    subject: `Bilan préparation mentale — ${periode.toLowerCase()}`,
+    html: page("Préparation mentale", periode, cartes.join("") + blocRien(rien, "sa prépa mentale", quandPeriode(debut, fin))),
   };
 }
 
