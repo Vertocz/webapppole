@@ -1,5 +1,5 @@
 -- Bilans hebdomadaires par mail (route /api/cron/bilan-hebdo).
--- Chaque membre du staff qui a une adresse e-mail reçoit le bilan
--- « Forme & suivi sportif » du ou des pôles cochés (colonnes masculin / feminin).
--- Laisser l'e-mail vide pour ne pas recevoir le bilan.
+-- Reçoivent le bilan « Forme & suivi sportif » de leur pôle (colonnes masculin / feminin)
+-- les membres du staff cochés bilan_hebdo et dont l'e-mail est renseigné.
 alter table public.staff add column if not exists email text;
+alter table public.staff add column if not exists bilan_hebdo boolean not null default false;

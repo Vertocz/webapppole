@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import nodemailer from "nodemailer";
 
 // Bilans hebdomadaires envoyés par mail le lundi matin (cron Vercel) :
 //  1. « Forme & suivi sportif » : un mail par pôle, aux membres du staff du pôle
-//     qui ont un e-mail renseigné (table staff, colonne email).
+//     cochés bilan_hebdo et qui ont un e-mail renseigné (table staff).
 //     Chaque pôle ne reçoit que les joueurs·ses de sa catégorie.
 //  2. « Préparation mentale » (pôle masculin uniquement) : un mail à PREPA_MENTALE_EMAIL.
 // Période couverte : les 7 jours qui précèdent le jour d'envoi (lundi → dimanche).
@@ -11,6 +12,7 @@ import { createClient } from "@supabase/supabase-js";
 //                     /api/cron/bilan-hebdo?voir=masculin|feminin|mentale&secret=CRON_SECRET (le mail en HTML)
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type Pole = "masculin" | "feminin";
 const CATEGORIE: Record<Pole, string> = { masculin: "Masculin", feminin: "Féminin" };
@@ -159,20 +161,23 @@ function mailPrepaMentale(joueurs: Joueur[], emotions: Emotion[], respirations: 
   };
 }
 
-// ─── Envoi ───────────────────────────────────────────────────────────────────
+// ─── Envoi (compte Gmail, mot de passe d'application) ────────────────────────
 async function envoyer(mail: Mail): Promise<{ ok: boolean; erreur?: string }> {
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: process.env.MAIL_FROM ?? "ParaBasket Pôle <onboarding@resend.dev>",
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, "");
+  if (!user || !pass) return { ok: false, erreur: "GMAIL_USER / GMAIL_APP_PASSWORD manquants" };
+  try {
+    const transport = nodemailer.createTransport({ service: "gmail", auth: { user, pass } });
+    await transport.sendMail({
+      from: { name: process.env.MAIL_NOM ?? "Pôles France", address: user },
       to: mail.to,
       subject: mail.subject,
       html: mail.html,
-      ...(process.env.MAIL_REPLY_TO ? { reply_to: process.env.MAIL_REPLY_TO } : {}),
-    }),
-  });
-  return res.ok ? { ok: true } : { ok: false, erreur: `${res.status} ${await res.text()}` };
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, erreur: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 const listeAdresses = (s?: string | null) =>
@@ -200,7 +205,7 @@ export async function GET(req: NextRequest) {
 
   const [joueursR, staffR, formesR, activitesR, emotionsR, respirationsR] = await Promise.all([
     sb.from("joueuses").select("id, prenom, nom, categorie").order("prenom"),
-    sb.from("staff").select("prenom, nom, email, masculin, feminin"),
+    sb.from("staff").select("prenom, nom, email, masculin, feminin").eq("bilan_hebdo", true),
     sb.from("suivi_forme").select("joueuse_id, date, fatigue, sommeil, douleur, stress, humeur, commentaire").gte("date", debut).lte("date", fin).order("date"),
     sb.from("activites").select("joueuse_id, date, sport, duree, difficulte, plaisir, commentaire").gte("date", debut).lte("date", fin).order("date"),
     sb.from("suivi_emotions").select("joueur_id, date, emotion_nom, intensite, declencheur, ressources").gte("date", debut).lte("date", fin).order("date"),
