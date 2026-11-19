@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 type Pole = "masculin" | "feminin";
 const CATEGORIE: Record<Pole, string> = { masculin: "Masculin", feminin: "Féminin" };
-const NOM_POLE: Record<Pole, string> = { masculin: "Pôle masculin (Poitiers)", feminin: "Pôle féminin (Nantes)" };
+const NOM_POLE: Record<Pole, string> = { masculin: "Pôle masculin", feminin: "Pôle féminin" };
 
 interface Joueur { id: string; prenom: string; nom: string; categorie?: string }
 interface Forme { joueuse_id: string; date: string; fatigue: number; sommeil: number; douleur: number; stress: number; humeur: number; commentaire?: string | null }
@@ -40,7 +40,7 @@ function jourFr(iso: string, avecJour = true): string {
 
 // ─── HTML ────────────────────────────────────────────────────────────────────
 const esc = (s: unknown) =>
-  String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").trim().replace(/\n/g, "<br>");
 const nomComplet = (j: Joueur) => `${j.prenom} ${j.nom ?? ""}`.trim();
 const prenomsListe = (js: Joueur[]) => js.map(nomComplet).join(", ");
 
@@ -52,7 +52,6 @@ function page(titre: string, sousTitre: string, contenu: string): string {
 <h1 style="font-size:20px;margin:0 0 4px;">${esc(titre)}</h1>
 <p style="margin:0 0 18px;color:${C.gris};">${esc(sousTitre)}</p>
 ${contenu}
-<p style="margin:24px 0 0;color:${C.gris};font-size:12px;">Mail envoyé automatiquement chaque lundi par l'app ParaBasket Pôle.</p>
 </div></body></html>`;
 }
 const carte = (titre: string, contenu: string) =>
@@ -60,11 +59,12 @@ const carte = (titre: string, contenu: string) =>
 <h2 style="font-size:16px;margin:0 0 10px;">${esc(titre)}</h2>${contenu}</div>`;
 const sousTitre = (t: string) => `<p style="margin:10px 0 6px;font-weight:bold;">${t}</p>`;
 const vide = (t: string) => `<p style="margin:4px 0;color:${C.gris};font-style:italic;">${esc(t)}</p>`;
-const blocRien = (js: Joueur[], quoi: string) =>
+const blocRien = (js: Joueur[], quoi: string, quand: string) =>
   js.length === 0
-    ? `<p style="margin:16px 0 0;color:${C.vert};">✅ Tout le monde a rempli ${esc(quoi)} cette semaine.</p>`
+    ? `<p style="margin:16px 0 0;color:${C.vert};">✅ Tout le monde a rempli ${esc(quoi)} ${quand}.</p>`
     : `<div style="margin:16px 0 0;padding:12px 16px;background:${C.fond};border:1px dashed ${C.bord};border-radius:10px;">
-<b>Rien de saisi cette semaine</b> (${js.length}) : ${esc(prenomsListe(js))}.</div>`;
+<b>Rien de saisi ${quand}</b> (${js.length}) : ${esc(prenomsListe(js))}.</div>`;
+const quandPeriode = (debut: string, fin: string) => (addDays(debut, 6) === fin ? "cette semaine" : "sur la période");
 
 // ─── Forme : indicateurs notés de 1 à 5 ──────────────────────────────────────
 // sensDefavorable : "haut" = une note élevée est mauvaise (fatigue, douleurs, stress)
@@ -99,14 +99,11 @@ function sectionForme(saisies: Forme[]): string {
 
 function sectionSportif(seances: Activite[]): string {
   if (seances.length === 0) return vide("Pas de séance saisie.");
-  const lignes = seances.map((a) => `<tr>
-<td style="padding:5px 6px;border-bottom:1px solid ${C.bord};white-space:nowrap;color:${C.gris};">${esc(jourFr(a.date))}</td>
-<td style="padding:5px 6px;border-bottom:1px solid ${C.bord};"><b>${esc(a.sport)}</b>${a.commentaire?.trim() ? `<br><span style="color:${C.gris};">${esc(a.commentaire)}</span>` : ""}</td>
-<td style="padding:5px 6px;border-bottom:1px solid ${C.bord};white-space:nowrap;">⏱ ${esc(a.duree)}</td>
-<td style="padding:5px 6px;border-bottom:1px solid ${C.bord};white-space:nowrap;">💪 ${a.difficulte}/10</td>
-<td style="padding:5px 6px;border-bottom:1px solid ${C.bord};white-space:nowrap;">😄 ${a.plaisir}/10</td></tr>`).join("");
-  return `<p style="margin:0 0 6px;color:${C.gris};font-size:12px;">${seances.length} séance${seances.length > 1 ? "s" : ""}</p>
-<table style="border-collapse:collapse;width:100%;font-size:13px;">${lignes}</table>`;
+  const lignes = seances.map((a) => `<div style="padding:7px 0;border-top:1px solid ${C.bord};">
+<div><span style="color:${C.gris};">${esc(jourFr(a.date))}</span> · <b>${esc(a.sport)}</b></div>
+<div style="margin-top:2px;">⏱ ${esc(a.duree)} &nbsp; 💪 Difficulté ${a.difficulte}/10 &nbsp; 😄 Plaisir ${a.plaisir}/10</div>
+${a.commentaire?.trim() ? `<div style="margin-top:2px;color:${C.gris};">💬 ${esc(a.commentaire)}</div>` : ""}</div>`).join("");
+  return `<p style="margin:0 0 4px;color:${C.gris};font-size:12px;">${seances.length} séance${seances.length > 1 ? "s" : ""}</p>${lignes}`;
 }
 
 function mailFormeSportif(pole: Pole, joueurs: Joueur[], formes: Forme[], activites: Activite[], debut: string, fin: string): Omit<Mail, "to"> {
@@ -118,10 +115,10 @@ function mailFormeSportif(pole: Pole, joueurs: Joueur[], formes: Forme[], activi
     if (f.length === 0 && a.length === 0) { rien.push(j); continue; }
     cartes.push(carte(nomComplet(j), sousTitre("Forme") + sectionForme(f) + sousTitre("Suivi sportif") + sectionSportif(a)));
   }
-  const periode = `Semaine du ${jourFr(debut, false)} au ${jourFr(fin, false)}`;
+  const periode = `${addDays(debut, 6) === fin ? "Semaine du" : "Du"} ${jourFr(debut, false)} au ${jourFr(fin, false)}`;
   return {
     subject: `Bilan forme & sportif — ${NOM_POLE[pole]} — ${periode.toLowerCase()}`,
-    html: page(`Forme & suivi sportif — ${NOM_POLE[pole]}`, periode, cartes.join("") + blocRien(rien, "son suivi")),
+    html: page(`Forme & suivi sportif — ${NOM_POLE[pole]}`, periode, cartes.join("") + blocRien(rien, "son suivi", quandPeriode(debut, fin))),
   };
 }
 
@@ -155,10 +152,10 @@ function mailPrepaMentale(joueurs: Joueur[], emotions: Emotion[], respirations: 
     if (e.length === 0 && r.length === 0) { rien.push(j); continue; }
     cartes.push(carte(nomComplet(j), sousTitre("Émotions") + sectionEmotions(e) + sousTitre("Respiration") + sectionRespiration(r)));
   }
-  const periode = `Semaine du ${jourFr(debut, false)} au ${jourFr(fin, false)}`;
+  const periode = `${addDays(debut, 6) === fin ? "Semaine du" : "Du"} ${jourFr(debut, false)} au ${jourFr(fin, false)}`;
   return {
     subject: `Bilan préparation mentale — ${NOM_POLE.masculin} — ${periode.toLowerCase()}`,
-    html: page(`Préparation mentale — ${NOM_POLE.masculin}`, periode, cartes.join("") + blocRien(rien, "sa prépa mentale")),
+    html: page(`Préparation mentale — ${NOM_POLE.masculin}`, periode, cartes.join("") + blocRien(rien, "sa prépa mentale", quandPeriode(debut, fin))),
   };
 }
 
@@ -195,7 +192,10 @@ export async function GET(req: NextRequest) {
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   const aujourdhui = todayParis();
-  const debut = addDays(aujourdhui, -7);
+  // ?jours=N : période plus longue, uniquement pour regarder (aperçu / voir)
+  const joursDemandes = Number(req.nextUrl.searchParams.get("jours"));
+  const jours = (apercu || voir) && joursDemandes > 0 && joursDemandes <= 90 ? Math.floor(joursDemandes) : 7;
+  const debut = addDays(aujourdhui, -jours);
   const fin = addDays(aujourdhui, -1);
 
   const [joueursR, staffR, formesR, activitesR, emotionsR, respirationsR] = await Promise.all([
