@@ -84,7 +84,8 @@ Chaque lundi vers 8 h (cron Vercel `0 7 * * 1`, en UTC : 8 h l'hiver, 9 h l'ét�
 Seul·es les joueurs·ses qui ont rempli quelque chose apparaissent ; les autres sont listé·es en bas du mail.
 Pour vérifier sans envoyer :
 `/api/cron/bilan-hebdo?voir=masculin&secret=<CRON_SECRET>` (ou `feminin`, `mentale`) affiche le mail,
-`?apercu=1&secret=<CRON_SECRET>` liste destinataires et sujets.
+`?apercu=1&secret=<CRON_SECRET>` liste destinataires et sujets,
+`?test=mon@adresse.fr&secret=<CRON_SECRET>` envoie les 3 mails uniquement à cette adresse (sujet préfixé [TEST]).
 
 ## Mode hors ligne
 

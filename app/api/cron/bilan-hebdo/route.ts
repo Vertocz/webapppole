@@ -186,10 +186,12 @@ const listeAdresses = (s?: string | null) =>
 export async function GET(req: NextRequest) {
   const apercu = req.nextUrl.searchParams.has("apercu");
   const voir = req.nextUrl.searchParams.get("voir"); // "masculin" | "feminin" | "mentale" → renvoie le HTML
+  // ?test=adresse : envoie les 3 mails uniquement à cette adresse (pour vérifier l'envoi)
+  const test = listeAdresses(req.nextUrl.searchParams.get("test"))[0];
   const secret = process.env.CRON_SECRET;
   const parEntete = !!secret && req.headers.get("authorization") === `Bearer ${secret}`;
-  // ?secret=… accepté uniquement pour regarder (aperçu / voir), jamais pour envoyer
-  const parUrl = !!secret && (apercu || !!voir) && req.nextUrl.searchParams.get("secret") === secret;
+  // ?secret=… accepté pour regarder (aperçu / voir) ou un envoi de test à une seule adresse, jamais pour l'envoi réel
+  const parUrl = !!secret && (apercu || !!voir || !!test) && req.nextUrl.searchParams.get("secret") === secret;
   if (!parEntete && !parUrl) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -199,7 +201,7 @@ export async function GET(req: NextRequest) {
   const aujourdhui = todayParis();
   // ?jours=N : période plus longue, uniquement pour regarder (aperçu / voir)
   const joursDemandes = Number(req.nextUrl.searchParams.get("jours"));
-  const jours = (apercu || voir) && joursDemandes > 0 && joursDemandes <= 90 ? Math.floor(joursDemandes) : 7;
+  const jours = (apercu || voir || test) && joursDemandes > 0 && joursDemandes <= 90 ? Math.floor(joursDemandes) : 7;
   const debut = addDays(aujourdhui, -jours);
   const fin = addDays(aujourdhui, -1);
 
@@ -236,6 +238,13 @@ export async function GET(req: NextRequest) {
   }
 
   const resultats: Record<string, unknown> = {};
+  if (test) {
+    for (const m of mails) {
+      const r = await envoyer({ ...m, to: [test], subject: `[TEST] ${m.subject}` });
+      resultats[m.cle] = { envoye: r.ok, to: [test], vraisDestinataires: m.to, ...(r.erreur ? { erreur: r.erreur } : {}) };
+    }
+    return NextResponse.json({ ok: true, test: true, periode: { debut, fin }, resultats });
+  }
   for (const m of mails) {
     if (m.to.length === 0) { resultats[m.cle] = { envoye: false, raison: "aucun destinataire" }; continue; }
     if (apercu) { resultats[m.cle] = { envoye: false, apercu: true, to: m.to, sujet: m.subject }; continue; }
