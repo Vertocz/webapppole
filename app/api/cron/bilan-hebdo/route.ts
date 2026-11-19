@@ -6,7 +6,7 @@ import nodemailer from "nodemailer";
 //  1. « Forme & suivi sportif » : un mail par pôle, aux membres du staff du pôle
 //     cochés bilan_hebdo et qui ont un e-mail renseigné (table staff).
 //     Chaque pôle ne reçoit que les joueurs·ses de sa catégorie.
-//  2. « Préparation mentale » (pôle masculin uniquement) : un mail à PREPA_MENTALE_EMAIL.
+//  2. « Préparation mentale » (pôle masculin uniquement) : aux membres du staff cochés bilan_mental.
 // Période couverte : les 7 jours qui précèdent le jour d'envoi (lundi → dimanche).
 // Aperçu sans envoi : /api/cron/bilan-hebdo?apercu=1&secret=CRON_SECRET (destinataires et sujets)
 //                     /api/cron/bilan-hebdo?voir=masculin|feminin|mentale&secret=CRON_SECRET (le mail en HTML)
@@ -205,7 +205,7 @@ export async function GET(req: NextRequest) {
 
   const [joueursR, staffR, formesR, activitesR, emotionsR, respirationsR] = await Promise.all([
     sb.from("joueuses").select("id, prenom, nom, categorie").order("prenom"),
-    sb.from("staff").select("prenom, nom, email, masculin, feminin").eq("bilan_hebdo", true),
+    sb.from("staff").select("prenom, nom, email, masculin, feminin, bilan_hebdo, bilan_mental").or("bilan_hebdo.eq.true,bilan_mental.eq.true"),
     sb.from("suivi_forme").select("joueuse_id, date, fatigue, sommeil, douleur, stress, humeur, commentaire").gte("date", debut).lte("date", fin).order("date"),
     sb.from("activites").select("joueuse_id, date, sport, duree, difficulte, plaisir, commentaire").gte("date", debut).lte("date", fin).order("date"),
     sb.from("suivi_emotions").select("joueur_id, date, emotion_nom, intensite, declencheur, ressources").gte("date", debut).lte("date", fin).order("date"),
@@ -215,17 +215,17 @@ export async function GET(req: NextRequest) {
   if (erreurLecture) return NextResponse.json({ ok: false, erreur: erreurLecture.message }, { status: 500 });
 
   const joueurs = (joueursR.data ?? []) as Joueur[];
-  const staff = (staffR.data ?? []) as { email?: string | null; masculin?: boolean; feminin?: boolean }[];
+  const staff = (staffR.data ?? []) as { email?: string | null; masculin?: boolean; feminin?: boolean; bilan_hebdo?: boolean; bilan_mental?: boolean }[];
 
   const mails: (Mail & { cle: string })[] = [];
   for (const pole of ["masculin", "feminin"] as Pole[]) {
-    const to = [...new Set(staff.filter((s) => s[pole]).flatMap((s) => listeAdresses(s.email)))];
+    const to = [...new Set(staff.filter((s) => s.bilan_hebdo && s[pole]).flatMap((s) => listeAdresses(s.email)))];
     const duPole = joueurs.filter((j) => j.categorie === CATEGORIE[pole]);
     mails.push({ cle: pole, to, ...mailFormeSportif(pole, duPole, (formesR.data ?? []) as Forme[], (activitesR.data ?? []) as Activite[], debut, fin) });
   }
   mails.push({
     cle: "mentale",
-    to: listeAdresses(process.env.PREPA_MENTALE_EMAIL),
+    to: [...new Set(staff.filter((s) => s.bilan_mental).flatMap((s) => listeAdresses(s.email)))],
     ...mailPrepaMentale(joueurs.filter((j) => j.categorie === CATEGORIE.masculin), (emotionsR.data ?? []) as Emotion[], (respirationsR.data ?? []) as Respiration[], debut, fin),
   });
 

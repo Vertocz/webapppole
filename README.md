@@ -25,7 +25,6 @@ Variables d'environnement (Vercel ou `.env.local`) :
 | `GMAIL_USER` | Compte Gmail qui envoie les bilans hebdomadaires |
 | `GMAIL_APP_PASSWORD` | Mot de passe d'application de ce compte (Compte Google > Sécurité > Validation en 2 étapes > Mots de passe des applications) |
 | `MAIL_NOM` | (optionnel) Nom d'expéditeur affiché, par défaut « Pôles France » |
-| `PREPA_MENTALE_EMAIL` | Destinataire(s) du bilan de préparation mentale (séparés par des virgules) |
 | `SNCF_API_KEY` | Recherche de trajets (page trains) |
 | `NEXT_PUBLIC_GITHUB_REPO` / `NEXT_PUBLIC_GITHUB_TOKEN` | Déclenchement du traitement des billets/cartes |
 | `NEXT_PUBLIC_APP_URL` | URL publique de l'app |
@@ -79,8 +78,8 @@ Chaque lundi vers 8 h (cron Vercel `0 7 * * 1`, en UTC : 8 h l'hiver, 9 h l'ét�
 
 - **Forme & suivi sportif** : un mail par pôle, à chaque membre du staff du pôle
   (colonnes `masculin` / `feminin`) coché `bilan_hebdo` et dont l'`email` est renseigné, avec uniquement les joueurs·ses de ce pôle.
-  Colonnes ajoutées par `sql/staff_email.sql` : cocher `bilan_hebdo` dans la table `staff` pour les destinataires.
-- **Préparation mentale** (émotions + respiration, pôle masculin uniquement) : à `PREPA_MENTALE_EMAIL`.
+  Colonnes ajoutées par `sql/staff_email.sql` : cocher `bilan_hebdo` / `bilan_mental` dans la table `staff` pour les destinataires.
+- **Préparation mentale** (émotions + respiration, pôle masculin uniquement) : aux membres du staff cochés `bilan_mental`.
 
 Seul·es les joueurs·ses qui ont rempli quelque chose apparaissent ; les autres sont listé·es en bas du mail.
 Pour vérifier sans envoyer :
