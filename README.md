@@ -21,7 +21,11 @@ Variables d'environnement (Vercel ou `.env.local`) :
 | `NEXT_PUBLIC_SUPABASE_URL` | URL du projet Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | Routes API serveur (push, rappels, Victorinis) |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Notifications push |
-| `CRON_SECRET` / `INTERNAL_CRON_KEY` | Rappels hebdomadaires (cron Vercel) |
+| `CRON_SECRET` / `INTERNAL_CRON_KEY` | Rappels et bilans hebdomadaires (cron Vercel) |
+| `RESEND_API_KEY` | Envoi des bilans hebdomadaires par mail (Resend) |
+| `MAIL_FROM` | Expéditeur des bilans, ex. `ParaBasket Pôle <bilan@mondomaine.fr>` (domaine vérifié dans Resend) |
+| `MAIL_REPLY_TO` | (optionnel) Adresse de réponse des bilans |
+| `PREPA_MENTALE_EMAIL` | Destinataire(s) du bilan de préparation mentale (séparés par des virgules) |
 | `SNCF_API_KEY` | Recherche de trajets (page trains) |
 | `NEXT_PUBLIC_GITHUB_REPO` / `NEXT_PUBLIC_GITHUB_TOKEN` | Déclenchement du traitement des billets/cartes |
 | `NEXT_PUBLIC_APP_URL` | URL publique de l'app |
@@ -67,6 +71,21 @@ Onglet « Analyse vidéo » de l'espace staff (`components/analyse/`, logique da
 - Stats du match, carte des tirs et réussite par zone, évolution sur plusieurs matchs.
 - Export PDF : une page coach, puis une page par joueur écrite pour être lue facilement
   (gros texte, mots simples, pastilles à compter, grand schéma des tirs).
+
+## Bilans hebdomadaires par mail
+
+Chaque lundi vers 8 h (cron Vercel `0 7 * * 1`, en UTC : 8 h l'hiver, 9 h l'été),
+`/api/cron/bilan-hebdo` envoie le bilan des 7 jours précédents :
+
+- **Forme & suivi sportif** : un mail par pôle, à chaque membre du staff du pôle
+  (colonnes `masculin` / `feminin`) dont l'`email` est renseigné.
+  À la première mise en place, exécuter `sql/staff_email.sql`, puis remplir les e-mails dans la table `staff`.
+- **Préparation mentale** (émotions + respiration, les deux pôles) : à `PREPA_MENTALE_EMAIL`.
+
+Seul·es les joueurs·ses qui ont rempli quelque chose apparaissent ; les autres sont listé·es en bas du mail.
+Pour vérifier sans envoyer :
+`/api/cron/bilan-hebdo?voir=masculin&secret=<CRON_SECRET>` (ou `feminin`, `mentale`) affiche le mail,
+`?apercu=1&secret=<CRON_SECRET>` liste destinataires et sujets.
 
 ## Mode hors ligne
 
