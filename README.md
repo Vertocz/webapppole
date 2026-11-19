@@ -78,9 +78,9 @@ Chaque lundi vers 8 h (cron Vercel `0 7 * * 1`, en UTC : 8 h l'hiver, 9 h l'ét�
 `/api/cron/bilan-hebdo` envoie le bilan des 7 jours précédents :
 
 - **Forme & suivi sportif** : un mail par pôle, à chaque membre du staff du pôle
-  (colonnes `masculin` / `feminin`) dont l'`email` est renseigné.
+  (colonnes `masculin` / `feminin`) dont l'`email` est renseigné, avec uniquement les joueurs·ses de ce pôle.
   À la première mise en place, exécuter `sql/staff_email.sql`, puis remplir les e-mails dans la table `staff`.
-- **Préparation mentale** (émotions + respiration, les deux pôles) : à `PREPA_MENTALE_EMAIL`.
+- **Préparation mentale** (émotions + respiration, pôle masculin uniquement) : à `PREPA_MENTALE_EMAIL`.
 
 Seul·es les joueurs·ses qui ont rempli quelque chose apparaissent ; les autres sont listé·es en bas du mail.
 Pour vérifier sans envoyer :

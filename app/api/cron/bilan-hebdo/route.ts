@@ -4,7 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 // Bilans hebdomadaires envoyés par mail le lundi matin (cron Vercel) :
 //  1. « Forme & suivi sportif » : un mail par pôle, aux membres du staff du pôle
 //     qui ont un e-mail renseigné (table staff, colonne email).
-//  2. « Préparation mentale » : un mail (les deux pôles) à PREPA_MENTALE_EMAIL.
+//     Chaque pôle ne reçoit que les joueurs·ses de sa catégorie.
+//  2. « Préparation mentale » (pôle masculin uniquement) : un mail à PREPA_MENTALE_EMAIL.
 // Période couverte : les 7 jours qui précèdent le jour d'envoi (lundi → dimanche).
 // Aperçu sans envoi : /api/cron/bilan-hebdo?apercu=1&secret=CRON_SECRET (destinataires et sujets)
 //                     /api/cron/bilan-hebdo?voir=masculin|feminin|mentale&secret=CRON_SECRET (le mail en HTML)
@@ -76,27 +77,24 @@ const INDICATEURS: { cle: keyof Forme; label: string; sensDefavorable: "haut" | 
 ];
 function couleurNote(v: number, sens: "haut" | "bas"): string {
   const mauvais = sens === "haut" ? v : 6 - v; // ramène à « plus c'est haut, plus c'est mauvais »
-  return mauvais >= 4 ? C.rouge : mauvais >= 3.5 ? C.orange : C.texte;
+  return mauvais >= 5 ? C.rouge : mauvais >= 4 ? C.orange : C.texte;
 }
 
 function sectionForme(saisies: Forme[]): string {
   if (saisies.length === 0) return vide("Pas de suivi de forme rempli.");
-  const cellules = INDICATEURS.map(({ cle, label, sensDefavorable }) => {
-    const vals = saisies.map((s) => Number(s[cle]));
-    const moy = vals.reduce((a, b) => a + b, 0) / vals.length;
-    const pire = sensDefavorable === "haut" ? Math.max(...vals) : Math.min(...vals);
-    const detail = vals.length > 1 ? `<br><span style="color:${C.gris};font-size:12px;">pire : ${pire}/5</span>` : "";
-    return `<td style="padding:6px;border:1px solid ${C.bord};text-align:center;vertical-align:top;">
-<div style="font-size:12px;color:${C.gris};">${label}</div>
-<div style="font-weight:bold;font-size:15px;color:${couleurNote(moy, sensDefavorable)};">${moy.toFixed(1).replace(".", ",")}/5</div>${detail}</td>`;
+  const th = (t: string) => `<th style="padding:4px;border-bottom:1px solid ${C.bord};font-weight:normal;color:${C.gris};font-size:12px;text-align:center;">${t}</th>`;
+  const entete = `<tr>${th("")}${INDICATEURS.map((i) => th(i.label)).join("")}</tr>`;
+  const lignes = saisies.map((s) => {
+    const notes = INDICATEURS.map(({ cle, sensDefavorable }) => {
+      const v = Number(s[cle]);
+      return `<td style="padding:5px 4px;text-align:center;font-weight:bold;color:${couleurNote(v, sensDefavorable)};">${v}/5</td>`;
+    }).join("");
+    const com = s.commentaire?.trim()
+      ? `<tr><td></td><td colspan="5" style="padding:0 4px 6px;color:${C.gris};">💬 ${esc(s.commentaire)}</td></tr>`
+      : "";
+    return `<tr style="border-top:1px solid ${C.bord};"><td style="padding:5px 4px;white-space:nowrap;color:${C.gris};">${esc(jourFr(s.date))}</td>${notes}</tr>${com}`;
   }).join("");
-  const commentaires = saisies
-    .filter((s) => s.commentaire && s.commentaire.trim())
-    .map((s) => `<li><span style="color:${C.gris};">${esc(jourFr(s.date))} :</span> ${esc(s.commentaire)}</li>`)
-    .join("");
-  return `<p style="margin:0 0 6px;color:${C.gris};font-size:12px;">Moyenne sur ${saisies.length} saisie${saisies.length > 1 ? "s" : ""}</p>
-<table style="border-collapse:collapse;width:100%;table-layout:fixed;"><tr>${cellules}</tr></table>
-${commentaires ? `<ul style="margin:8px 0 0;padding-left:18px;">${commentaires}</ul>` : ""}`;
+  return `<table style="border-collapse:collapse;width:100%;font-size:13px;">${entete}${lignes}</table>`;
 }
 
 function sectionSportif(seances: Activite[]): string {
@@ -149,22 +147,18 @@ ${r.commentaire?.trim() ? `<br>${esc(r.commentaire)}` : ""}</li>`;
 }
 
 function mailPrepaMentale(joueurs: Joueur[], emotions: Emotion[], respirations: Respiration[], debut: string, fin: string): Omit<Mail, "to"> {
-  const sections = (["masculin", "feminin"] as Pole[]).map((pole) => {
-    const duPole = joueurs.filter((j) => j.categorie === CATEGORIE[pole]);
-    const cartes: string[] = [];
-    const rien: Joueur[] = [];
-    for (const j of duPole) {
-      const e = emotions.filter((x) => x.joueur_id === j.id);
-      const r = respirations.filter((x) => x.joueur_id === j.id);
-      if (e.length === 0 && r.length === 0) { rien.push(j); continue; }
-      cartes.push(carte(nomComplet(j), sousTitre("Émotions") + sectionEmotions(e) + sousTitre("Respiration") + sectionRespiration(r)));
-    }
-    return `<h2 style="font-size:18px;margin:22px 0 10px;">${esc(NOM_POLE[pole])}</h2>${cartes.join("")}${blocRien(rien, "sa prépa mentale")}`;
-  }).join("");
+  const cartes: string[] = [];
+  const rien: Joueur[] = [];
+  for (const j of joueurs) {
+    const e = emotions.filter((x) => x.joueur_id === j.id);
+    const r = respirations.filter((x) => x.joueur_id === j.id);
+    if (e.length === 0 && r.length === 0) { rien.push(j); continue; }
+    cartes.push(carte(nomComplet(j), sousTitre("Émotions") + sectionEmotions(e) + sousTitre("Respiration") + sectionRespiration(r)));
+  }
   const periode = `Semaine du ${jourFr(debut, false)} au ${jourFr(fin, false)}`;
   return {
-    subject: `Bilan préparation mentale — ${periode.toLowerCase()}`,
-    html: page("Préparation mentale — Pôles France", periode, sections),
+    subject: `Bilan préparation mentale — ${NOM_POLE.masculin} — ${periode.toLowerCase()}`,
+    html: page(`Préparation mentale — ${NOM_POLE.masculin}`, periode, cartes.join("") + blocRien(rien, "sa prépa mentale")),
   };
 }
 
@@ -227,7 +221,7 @@ export async function GET(req: NextRequest) {
   mails.push({
     cle: "mentale",
     to: listeAdresses(process.env.PREPA_MENTALE_EMAIL),
-    ...mailPrepaMentale(joueurs, (emotionsR.data ?? []) as Emotion[], (respirationsR.data ?? []) as Respiration[], debut, fin),
+    ...mailPrepaMentale(joueurs.filter((j) => j.categorie === CATEGORIE.masculin), (emotionsR.data ?? []) as Emotion[], (respirationsR.data ?? []) as Respiration[], debut, fin),
   });
 
   if (voir) {
