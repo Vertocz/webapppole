@@ -46,66 +46,80 @@ const esc = (s: unknown) =>
 const nomComplet = (j: Joueur) => `${j.prenom} ${j.nom ?? ""}`.trim();
 const prenomsListe = (js: Joueur[]) => js.map(nomComplet).join(", ");
 
-const C = { texte: "#1f2937", gris: "#6b7280", bord: "#e5e7eb", fond: "#f9fafb", rouge: "#b91c1c", orange: "#c2410c", vert: "#15803d" };
+const C = { texte: "#1f2937", gris: "#64748b", bord: "#e2e8f0", fond: "#f1f5f9", marine: "#16324f", vert: "#166534" };
+const TON = {
+  neutre: { bg: "#f1f5f9", fg: "#1f2937" },
+  orange: { bg: "#ffedd5", fg: "#9a3412" },
+  rouge: { bg: "#fee2e2", fg: "#991b1b" },
+};
+type Ton = keyof typeof TON;
+const pastille = (texte: string, ton: Ton = "neutre") =>
+  `<span style="display:inline-block;white-space:nowrap;margin:3px 4px 0 0;padding:3px 9px;border-radius:12px;background:${TON[ton].bg};color:${TON[ton].fg};font-size:13px;font-weight:bold;">${texte}</span>`;
 
-function page(titre: string, sousTitre: string, contenu: string): string {
-  return `<!DOCTYPE html><html lang="fr"><body style="margin:0;padding:0;background:#f3f4f6;">
-<div style="max-width:680px;margin:0 auto;padding:20px 12px;font-family:Arial,Helvetica,sans-serif;color:${C.texte};font-size:14px;line-height:1.45;">
-<h1 style="font-size:20px;margin:0 0 4px;">${esc(titre)}</h1>
-<p style="margin:0 0 18px;color:${C.gris};">${esc(sousTitre)}</p>
+function page(titre: string, periode: string, legende: string, contenu: string): string {
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#eef2f6;">
+<div style="max-width:600px;margin:0 auto;padding:16px 10px;font-family:Arial,Helvetica,sans-serif;color:${C.texte};font-size:14px;line-height:1.45;">
+<div style="background:${C.marine};color:#ffffff;border-radius:12px 12px 0 0;padding:18px 18px 14px;">
+<div style="font-size:19px;font-weight:bold;">${esc(titre)}</div>
+<div style="font-size:13px;opacity:.85;margin-top:2px;">${esc(periode)}</div></div>
+<div style="background:#ffffff;border-radius:0 0 12px 12px;padding:10px 18px;margin:0 0 14px;font-size:12px;color:${C.gris};">${legende}</div>
 ${contenu}
 </div></body></html>`;
 }
 const carte = (titre: string, contenu: string) =>
-  `<div style="background:#fff;border:1px solid ${C.bord};border-radius:10px;padding:14px 16px;margin:0 0 12px;">
-<h2 style="font-size:16px;margin:0 0 10px;">${esc(titre)}</h2>${contenu}</div>`;
-const sousTitre = (t: string) => `<p style="margin:10px 0 6px;font-weight:bold;">${t}</p>`;
-const vide = (t: string) => `<p style="margin:4px 0;color:${C.gris};font-style:italic;">${esc(t)}</p>`;
+  `<div style="background:#ffffff;border-radius:12px;padding:14px 16px 10px;margin:0 0 12px;border-left:4px solid ${C.marine};">
+<div style="font-size:16px;font-weight:bold;margin:0 0 2px;">${esc(titre)}</div>${contenu}</div>`;
+const rubrique = (t: string) =>
+  `<div style="margin:12px 0 2px;font-size:11px;font-weight:bold;letter-spacing:1px;color:${C.gris};text-transform:uppercase;">${esc(t)}</div>`;
+const entree = (date: string, corps: string, commentaire?: string | null) =>
+  `<div style="padding:7px 0;border-top:1px solid ${C.bord};">
+<div style="font-size:12px;color:${C.gris};">${esc(jourFr(date))}</div>${corps}
+${commentaire?.trim() ? `<div style="margin-top:4px;color:#475569;font-style:italic;">💬 ${esc(commentaire)}</div>` : ""}</div>`;
+const vide = (t: string) => `<div style="padding:6px 0;border-top:1px solid ${C.bord};color:${C.gris};font-style:italic;">${esc(t)}</div>`;
 const blocRien = (js: Joueur[], quoi: string, quand: string) =>
   js.length === 0
-    ? `<p style="margin:16px 0 0;color:${C.vert};">✅ Tout le monde a rempli ${esc(quoi)} ${quand}.</p>`
-    : `<div style="margin:16px 0 0;padding:12px 16px;background:${C.fond};border:1px dashed ${C.bord};border-radius:10px;">
-<b>Rien de saisi ${quand}</b> (${js.length}) : ${esc(prenomsListe(js))}.</div>`;
+    ? `<div style="padding:12px 16px;background:#ffffff;border-radius:12px;color:${C.vert};">✅ Tout le monde a rempli ${esc(quoi)} ${quand}.</div>`
+    : `<div style="padding:12px 16px;background:#ffffff;border-radius:12px;">
+<b>Rien de saisi ${quand}</b> (${js.length})<br><span style="color:${C.gris};">${esc(prenomsListe(js))}</span></div>`;
 const quandPeriode = (debut: string, fin: string) => (addDays(debut, 6) === fin ? "cette semaine" : "sur la période");
 
 // ─── Forme : indicateurs notés de 1 à 5 ──────────────────────────────────────
 // sensDefavorable : "haut" = une note élevée est mauvaise (fatigue, douleurs, stress)
-const INDICATEURS: { cle: keyof Forme; label: string; sensDefavorable: "haut" | "bas" }[] = [
-  { cle: "fatigue", label: "😴 Fatigue", sensDefavorable: "haut" },
-  { cle: "sommeil", label: "🛌 Sommeil", sensDefavorable: "bas" },
-  { cle: "douleur", label: "🤕 Douleurs", sensDefavorable: "haut" },
-  { cle: "stress", label: "😰 Stress", sensDefavorable: "haut" },
-  { cle: "humeur", label: "😊 Humeur", sensDefavorable: "bas" },
+const INDICATEURS: { cle: keyof Forme; emoji: string; nom: string; sensDefavorable: "haut" | "bas" }[] = [
+  { cle: "fatigue", emoji: "😴", nom: "fatigue", sensDefavorable: "haut" },
+  { cle: "sommeil", emoji: "🛌", nom: "sommeil", sensDefavorable: "bas" },
+  { cle: "douleur", emoji: "🤕", nom: "douleurs", sensDefavorable: "haut" },
+  { cle: "stress", emoji: "😰", nom: "stress", sensDefavorable: "haut" },
+  { cle: "humeur", emoji: "😊", nom: "humeur", sensDefavorable: "bas" },
 ];
-function couleurNote(v: number, sens: "haut" | "bas"): string {
+function tonNote(v: number, sens: "haut" | "bas"): Ton {
   const mauvais = sens === "haut" ? v : 6 - v; // ramène à « plus c'est haut, plus c'est mauvais »
-  return mauvais >= 5 ? C.rouge : mauvais >= 4 ? C.orange : C.texte;
+  return mauvais >= 5 ? "rouge" : mauvais >= 4 ? "orange" : "neutre";
 }
+const LEGENDE_FORME = `Forme notée sur 5 : ${INDICATEURS.map((i) => `${i.emoji} ${i.nom}`).join(" · ")}.<br>
+Séances : ⏱ durée · 💪 difficulté /10 · 😄 plaisir /10. En orange ou rouge : point à surveiller.`;
 
 function sectionForme(saisies: Forme[]): string {
   if (saisies.length === 0) return vide("Pas de suivi de forme rempli.");
-  const th = (t: string) => `<th style="padding:4px;border-bottom:1px solid ${C.bord};font-weight:normal;color:${C.gris};font-size:12px;text-align:center;">${t}</th>`;
-  const entete = `<tr>${th("")}${INDICATEURS.map((i) => th(i.label)).join("")}</tr>`;
-  const lignes = saisies.map((s) => {
-    const notes = INDICATEURS.map(({ cle, sensDefavorable }) => {
+  return saisies.map((s) => entree(
+    s.date,
+    `<div>${INDICATEURS.map(({ cle, emoji, sensDefavorable }) => {
       const v = Number(s[cle]);
-      return `<td style="padding:5px 4px;text-align:center;font-weight:bold;color:${couleurNote(v, sensDefavorable)};">${v}/5</td>`;
-    }).join("");
-    const com = s.commentaire?.trim()
-      ? `<tr><td></td><td colspan="5" style="padding:0 4px 6px;color:${C.gris};">💬 ${esc(s.commentaire)}</td></tr>`
-      : "";
-    return `<tr style="border-top:1px solid ${C.bord};"><td style="padding:5px 4px;white-space:nowrap;color:${C.gris};">${esc(jourFr(s.date))}</td>${notes}</tr>${com}`;
-  }).join("");
-  return `<table style="border-collapse:collapse;width:100%;font-size:13px;">${entete}${lignes}</table>`;
+      return pastille(`${emoji} ${v}`, tonNote(v, sensDefavorable));
+    }).join("")}</div>`,
+    s.commentaire,
+  )).join("");
 }
 
 function sectionSportif(seances: Activite[]): string {
   if (seances.length === 0) return vide("Pas de séance saisie.");
-  const lignes = seances.map((a) => `<div style="padding:7px 0;border-top:1px solid ${C.bord};">
-<div><span style="color:${C.gris};">${esc(jourFr(a.date))}</span> · <b>${esc(a.sport)}</b></div>
-<div style="margin-top:2px;">⏱ ${esc(a.duree)} &nbsp; 💪 Difficulté ${a.difficulte}/10 &nbsp; 😄 Plaisir ${a.plaisir}/10</div>
-${a.commentaire?.trim() ? `<div style="margin-top:2px;color:${C.gris};">💬 ${esc(a.commentaire)}</div>` : ""}</div>`).join("");
-  return `<p style="margin:0 0 4px;color:${C.gris};font-size:12px;">${seances.length} séance${seances.length > 1 ? "s" : ""}</p>${lignes}`;
+  return seances.map((a) => entree(
+    a.date,
+    `<div style="font-weight:bold;margin-top:1px;">${esc(a.sport)}</div>
+<div>${pastille(`⏱ ${esc(a.duree)}`)}${pastille(`💪 ${a.difficulte}/10`)}${pastille(`😄 ${a.plaisir}/10`)}</div>`,
+    a.commentaire,
+  )).join("");
 }
 
 function mailFormeSportif(pole: Pole, joueurs: Joueur[], formes: Forme[], activites: Activite[], debut: string, fin: string): Omit<Mail, "to"> {
@@ -115,12 +129,12 @@ function mailFormeSportif(pole: Pole, joueurs: Joueur[], formes: Forme[], activi
     const f = formes.filter((x) => x.joueuse_id === j.id);
     const a = activites.filter((x) => x.joueuse_id === j.id);
     if (f.length === 0 && a.length === 0) { rien.push(j); continue; }
-    cartes.push(carte(nomComplet(j), sousTitre("Forme") + sectionForme(f) + sousTitre("Suivi sportif") + sectionSportif(a)));
+    cartes.push(carte(nomComplet(j), rubrique("Forme") + sectionForme(f) + rubrique("Suivi sportif") + sectionSportif(a)));
   }
   const periode = `${addDays(debut, 6) === fin ? "Semaine du" : "Du"} ${jourFr(debut, false)} au ${jourFr(fin, false)}`;
   return {
     subject: `Bilan forme & sportif — ${NOM_POLE[pole]} — ${periode.toLowerCase()}`,
-    html: page(`Forme & suivi sportif — ${NOM_POLE[pole]}`, periode, cartes.join("") + blocRien(rien, "son suivi", quandPeriode(debut, fin))),
+    html: page(`Forme & suivi sportif — ${NOM_POLE[pole]}`, periode, LEGENDE_FORME, cartes.join("") + blocRien(rien, "son suivi", quandPeriode(debut, fin))),
   };
 }
 
@@ -129,20 +143,22 @@ const CONTEXTE: Record<string, string> = { activation: "Activation", relaxation:
 
 function sectionEmotions(es: Emotion[]): string {
   if (es.length === 0) return vide("Pas de scan émotionnel.");
-  return `<ul style="margin:0;padding-left:18px;">${es.map((e) => `<li style="margin:0 0 6px;">
-<span style="color:${C.gris};">${esc(jourFr(e.date))} :</span> <b>${esc(e.emotion_nom)}</b> (intensité ${esc(e.intensite)})
-${e.declencheur?.trim() ? `<br>Déclencheur : ${esc(e.declencheur)}` : ""}
-${e.ressources?.trim() ? `<br>Ressources : ${esc(e.ressources)}` : ""}</li>`).join("")}</ul>`;
+  return es.map((e) => entree(
+    e.date,
+    `<div>${pastille(`${esc(e.emotion_nom)} · ${esc(e.intensite)}/5`)}</div>
+${e.declencheur?.trim() ? `<div style="margin-top:3px;"><span style="color:${C.gris};">Déclencheur :</span> ${esc(e.declencheur)}</div>` : ""}
+${e.ressources?.trim() ? `<div><span style="color:${C.gris};">Ressources :</span> ${esc(e.ressources)}</div>` : ""}`,
+  )).join("");
 }
 
 function sectionRespiration(rs: Respiration[]): string {
   if (rs.length === 0) return vide("Pas d'exercice de respiration.");
-  return `<ul style="margin:0;padding-left:18px;">${rs.map((r) => {
-    const infos = [r.moment, r.temps].filter((x) => x && String(x).trim()).map(esc).join(" · ");
-    return `<li style="margin:0 0 6px;"><span style="color:${C.gris};">${esc(jourFr(r.date))} :</span>
-<b>${esc(r.exercice)}</b> (${esc(CONTEXTE[r.contexte] ?? r.contexte)})${infos ? ` — ${infos}` : ""}
-${r.commentaire?.trim() ? `<br>${esc(r.commentaire)}` : ""}</li>`;
-  }).join("")}</ul>`;
+  return rs.map((r) => entree(
+    r.date,
+    `<div style="font-weight:bold;margin-top:1px;">${esc(r.exercice)} <span style="font-weight:normal;color:${C.gris};">· ${esc(CONTEXTE[r.contexte] ?? r.contexte)}</span></div>
+<div>${[r.moment, r.temps].filter((x) => x && String(x).trim()).map((x) => pastille(esc(x))).join("")}</div>`,
+    r.commentaire,
+  )).join("");
 }
 
 function mailPrepaMentale(joueurs: Joueur[], emotions: Emotion[], respirations: Respiration[], debut: string, fin: string): Omit<Mail, "to"> {
@@ -152,12 +168,12 @@ function mailPrepaMentale(joueurs: Joueur[], emotions: Emotion[], respirations: 
     const e = emotions.filter((x) => x.joueur_id === j.id);
     const r = respirations.filter((x) => x.joueur_id === j.id);
     if (e.length === 0 && r.length === 0) { rien.push(j); continue; }
-    cartes.push(carte(nomComplet(j), sousTitre("Émotions") + sectionEmotions(e) + sousTitre("Respiration") + sectionRespiration(r)));
+    cartes.push(carte(nomComplet(j), rubrique("Émotions") + sectionEmotions(e) + rubrique("Respiration") + sectionRespiration(r)));
   }
   const periode = `${addDays(debut, 6) === fin ? "Semaine du" : "Du"} ${jourFr(debut, false)} au ${jourFr(fin, false)}`;
   return {
     subject: `Bilan préparation mentale — ${NOM_POLE.masculin} — ${periode.toLowerCase()}`,
-    html: page(`Préparation mentale — ${NOM_POLE.masculin}`, periode, cartes.join("") + blocRien(rien, "sa prépa mentale", quandPeriode(debut, fin))),
+    html: page(`Préparation mentale — ${NOM_POLE.masculin}`, periode, "Scans émotionnels (intensité sur 5) et exercices de respiration.", cartes.join("") + blocRien(rien, "sa prépa mentale", quandPeriode(debut, fin))),
   };
 }
 
