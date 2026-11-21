@@ -275,7 +275,15 @@ def process_all():
         staff = supabase.table("staff").select("id, prenom, nom").execute().data
 
     print("📂 Scan du bucket...")
-    files = supabase.storage.from_(BUCKET).list()
+    # list() renvoie 100 fichiers max par défaut → pagination
+    files, offset = [], 0
+    while True:
+        batch = supabase.storage.from_(BUCKET).list("", {"limit": 1000, "offset": offset})
+        files += batch
+        if len(batch) < 1000:
+            break
+        offset += 1000
+    existing_names = {f['name'] for f in files}
 
     unidentified: list[dict] = []
 
@@ -315,6 +323,15 @@ def process_all():
             check = supabase.table("billets").select("id").eq("nom_fichier", new_name).execute()
             if check.data:
                 print(f"⏭️  Déjà traité : {new_name}")
+                if name != new_name:
+                    # Doublon ré-uploadé : on garde le PDF déjà renommé et on supprime la copie.
+                    # Si le PDF d'origine a disparu du stockage, la copie le remplace.
+                    if new_name not in existing_names:
+                        supabase.storage.from_(BUCKET).copy(name, new_name)
+                        existing_names.add(new_name)
+                        print(f"   📁 PDF manquant restauré : {new_name}")
+                    supabase.storage.from_(BUCKET).remove([name])
+                    print(f"   🗑️  Doublon supprimé du stockage : {name}")
                 continue
 
             billet_res = supabase.table("billets").insert({
